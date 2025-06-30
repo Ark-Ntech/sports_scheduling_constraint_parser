@@ -2,6 +2,10 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { HfInference } from '@huggingface/inference';
 
+// Explicit runtime configuration for Vercel
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 interface ExplanationData {
   confidenceBreakdown: string;
   entityAnalysis: string;
