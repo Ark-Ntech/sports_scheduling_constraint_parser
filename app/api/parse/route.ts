@@ -15,14 +15,15 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
 
+    // TEMPORARILY DISABLE AUTH CHECK FOR DEBUGGING
     // Check authentication
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    // const {
+    //   data: { user },
+    //   error: authError,
+    // } = await supabase.auth.getUser();
+    // if (authError || !user) {
+    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // }
 
     const body = await request.json();
     const { text, constraintSetId, parseMultiple = true } = body;
