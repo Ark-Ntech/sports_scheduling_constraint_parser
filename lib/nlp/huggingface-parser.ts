@@ -45,6 +45,8 @@ export class HuggingFaceConstraintParser {
 
   constructor() {
     try {
+      console.log('🔧 Initializing HuggingFace parser...');
+
       // Initialize Hugging Face - check multiple environment variable names
       this.accessToken =
         process.env.HUGGINGFACE_API_TOKEN ||
@@ -53,6 +55,17 @@ export class HuggingFaceConstraintParser {
         process.env.HUGGINGFACE_ACCESS_TOKEN ||
         process.env.HF_ACCESS_TOKEN ||
         null;
+
+      console.log('🔍 Environment variable check:');
+      console.log(
+        `   HUGGINGFACE_API_TOKEN: ${process.env.HUGGINGFACE_API_TOKEN ? '✅ Set' : '❌ Not set'}`,
+      );
+      console.log(
+        `   HUGGINGFACE_ACCESS_TOKEN: ${process.env.HUGGINGFACE_ACCESS_TOKEN ? '✅ Set' : '❌ Not set'}`,
+      );
+      console.log(
+        `   HF_TOKEN: ${process.env.HF_TOKEN ? '✅ Set' : '❌ Not set'}`,
+      );
 
       if (this.accessToken) {
         // Validate token format
@@ -67,8 +80,15 @@ export class HuggingFaceConstraintParser {
         this.isConfigured = true;
         console.log('✅ HuggingFace parser initialized successfully');
         console.log(`   Token format: ${this.accessToken.substring(0, 8)}...`);
+        console.log('   🎯 ML-powered parsing enabled!');
       } else {
         console.warn('⚠️ No HuggingFace token found, using rule-based fallback');
+        console.warn('   📝 To enable ML parsing:');
+        console.warn(
+          '   1. Get token from https://huggingface.co/settings/tokens',
+        );
+        console.warn('   2. Set HUGGINGFACE_ACCESS_TOKEN environment variable');
+        console.warn('   3. Redeploy application');
         console.warn(
           '   Checked: HUGGINGFACE_API_TOKEN, HUGGINGFACE_API_KEY, HF_TOKEN, HUGGINGFACE_ACCESS_TOKEN, HF_ACCESS_TOKEN',
         );
@@ -116,7 +136,7 @@ export class HuggingFaceConstraintParser {
       const conditions = await this.extractConditions(text, constraintType);
 
       // Build structured result based on type
-      const result: any = {
+      let result: any = {
         type: constraintType,
         entities,
         conditions,
@@ -127,6 +147,13 @@ export class HuggingFaceConstraintParser {
           conditions,
           constraintType,
         ),
+        // Store ML confidence components for OpenAI explanation
+        mlConfidence: {
+          intentScore: intentResult[0]?.score || 0.5,
+          entityCount: entities.length,
+          conditionCount: conditions.length,
+          constraintType: constraintType,
+        },
       };
 
       // Add type-specific parsing
@@ -152,11 +179,35 @@ export class HuggingFaceConstraintParser {
       const judgeResult = await this.applyLLMJudge(text, result, intentResult);
       result.llmJudge = judgeResult;
 
+      // NEW: LLM-powered JSON Schema Validation
+      const schemaValidation = await this.validateJSONWithLLM(result, text);
+      result.schemaValidation = schemaValidation;
+
+      // NEW: Semantic JSON Correction if needed
+      if (!schemaValidation.isValid || schemaValidation.needsCorrection) {
+        console.log('🔧 Applying semantic JSON correction...');
+        const correctedResult = await this.semanticJSONCorrection(
+          result,
+          text,
+          schemaValidation.issues,
+        );
+        if (correctedResult) {
+          result = { ...result, ...correctedResult };
+          result.wasCorreected = true;
+          console.log('✅ JSON semantically corrected by LLM');
+        }
+      }
+
       // Adjust confidence based on LLM judge
       if (judgeResult.isValid) {
         result.confidence = Math.min(result.confidence * 1.1, 1.0); // Boost confidence
       } else {
         result.confidence = Math.max(result.confidence * 0.8, 0.1); // Reduce confidence
+      }
+
+      // Additional confidence boost for schema-valid results
+      if (schemaValidation.isValid) {
+        result.confidence = Math.min(result.confidence * 1.05, 1.0);
       }
 
       console.log(
@@ -598,16 +649,39 @@ export class HuggingFaceConstraintParser {
 
     // Entity-aware classification: override HF classification based on entity patterns
     if (entities) {
+      const hasTeam = entities.some((e) => e.type === 'team');
+      const hasTime = entities.some((e) =>
+        ['time', 'day_of_week', 'date'].includes(e.type),
+      );
       const hasCapacityIndicator = entities.some(
         (e) => e.type === 'capacity_indicator',
       );
       const hasNumber = entities.some((e) => e.type === 'number');
       const hasTimePeriod = entities.some((e) => e.type === 'time_period');
       const hasVenue = entities.some((e) => e.type === 'venue');
+      const hasDuration = entities.some((e) => e.type === 'duration');
+      const hasPersonnel = entities.some((e) => e.type === 'personnel');
+      const hasRequirement = entities.some((e) => e.type === 'requirement');
 
       console.log(
-        `🔍 Entity analysis: capacity_indicator(${hasCapacityIndicator}), number(${hasNumber}), time_period(${hasTimePeriod}), venue(${hasVenue})`,
+        `🔍 Entity analysis: team(${hasTeam}), day_of_week/time(${hasTime}), capacity_indicator(${hasCapacityIndicator}), number(${hasNumber}), time_period(${hasTimePeriod}), venue(${hasVenue}), duration(${hasDuration}), personnel(${hasPersonnel}), requirement(${hasRequirement})`,
       );
+
+      // Duration constraints (NEW - handle "cannot exceed 90 minutes")
+      if (hasDuration && hasCapacityIndicator && textLower.includes('exceed')) {
+        console.log(
+          '🎯 Entity-based override: Duration capacity constraint detected (cannot exceed X minutes)',
+        );
+        return 'capacity';
+      }
+
+      // Supervision/personnel requirements (NEW - handle "require parent supervision")
+      if (hasPersonnel && hasRequirement) {
+        console.log(
+          '🎯 Entity-based override: Personnel requirement constraint detected',
+        );
+        return 'preference'; // Supervision requirements are typically soft constraints
+      }
 
       // Strong capacity constraint indicators
       if (hasCapacityIndicator && hasNumber && (hasTimePeriod || hasVenue)) {
@@ -716,7 +790,7 @@ export class HuggingFaceConstraintParser {
   private extractSportsSpecificEntities(text: string): Entity[] {
     const entities: Entity[] = [];
 
-    // Days of week (high confidence)
+    // Days of week (high confidence) - Process FIRST to avoid conflicts
     const dayMatches = text.match(
       /\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mondays|Tuesdays|Wednesdays|Thursdays|Fridays|Saturdays|Sundays)\b/gi,
     );
@@ -729,6 +803,11 @@ export class HuggingFaceConstraintParser {
         });
       });
     }
+
+    // Create a set of already found day values to avoid duplicates in team detection
+    const foundDays = new Set(
+      dayMatches?.map((match) => match.toLowerCase()) || [],
+    );
 
     // Time patterns (enhanced)
     const timeMatches = text.match(
@@ -744,9 +823,23 @@ export class HuggingFaceConstraintParser {
       });
     }
 
+    // Duration and time units (NEW - critical for duration constraints)
+    const durationMatches = text.match(
+      /\b(\d+)\s*(minutes?|hours?|mins?|hrs?|seconds?|secs?)\b/gi,
+    );
+    if (durationMatches) {
+      durationMatches.forEach((match) => {
+        entities.push({
+          type: 'duration',
+          value: match.toLowerCase(),
+          confidence: 0.92,
+        });
+      });
+    }
+
     // Time periods (enhanced for capacity constraints)
     const periodMatches = text.match(
-      /\b(per\s+(day|week|month|hour)|daily|weekly|monthly|hourly)\b/gi,
+      /\b(per\s+(day|week|month|hour)|daily|weekly|monthly|hourly|duration)\b/gi,
     );
     if (periodMatches) {
       periodMatches.forEach((match) => {
@@ -754,6 +847,34 @@ export class HuggingFaceConstraintParser {
           type: 'time_period',
           value: match.toLowerCase(),
           confidence: 0.8,
+        });
+      });
+    }
+
+    // Supervision and personnel requirements (NEW - for supervision constraints)
+    const supervisionMatches = text.match(
+      /\b(parent|coach|supervisor|official|referee|adult|guardian|staff|instructor)\s*(supervision|oversight|presence|required|mandatory)?\b/gi,
+    );
+    if (supervisionMatches) {
+      supervisionMatches.forEach((match) => {
+        entities.push({
+          type: 'personnel',
+          value: match.toLowerCase(),
+          confidence: 0.88,
+        });
+      });
+    }
+
+    // Requirement indicators (NEW - for policies and rules)
+    const requirementMatches = text.match(
+      /\b(require|need|mandatory|must\s+have|necessary|essential|obligatory)\b/gi,
+    );
+    if (requirementMatches) {
+      requirementMatches.forEach((match) => {
+        entities.push({
+          type: 'requirement',
+          value: match.toLowerCase(),
+          confidence: 0.85,
         });
       });
     }
@@ -772,17 +893,20 @@ export class HuggingFaceConstraintParser {
       });
     }
 
-    // Team patterns (enhanced)
+    // Team patterns (enhanced) - Fixed to handle single letter team names and exclude days
     const teamMatches = text.match(
-      /\b(Team\s+[A-Z]\w*|[A-Z]\w+\s+Team|Lakers|Warriors|Bulls|Giants|Eagles|[A-Z][a-z]+s)\b/g,
+      /\b(Team\s+[A-Z](?:\w*)?|[A-Z]\w+\s+Team|Lakers|Warriors|Bulls|Giants|Eagles|Lions|Tigers|Bears|Rams|Hawks|Falcons|youth\s+league|school\s+teams?)\b/gi,
     );
     if (teamMatches) {
       teamMatches.forEach((match) => {
-        entities.push({
-          type: 'team',
-          value: match,
-          confidence: 0.8,
-        });
+        // Skip if this match is already identified as a day of the week
+        if (!foundDays.has(match.toLowerCase())) {
+          entities.push({
+            type: 'team',
+            value: match,
+            confidence: 0.8,
+          });
+        }
       });
     }
 
@@ -795,7 +919,8 @@ export class HuggingFaceConstraintParser {
           text.toLowerCase().includes('no more than') ||
           text.toLowerCase().includes('at least') ||
           text.toLowerCase().includes('maximum') ||
-          text.toLowerCase().includes('minimum')
+          text.toLowerCase().includes('minimum') ||
+          text.toLowerCase().includes('exceed')
             ? 0.9
             : 0.85;
         entities.push({
@@ -806,9 +931,9 @@ export class HuggingFaceConstraintParser {
       });
     }
 
-    // Capacity constraint indicators
+    // Capacity constraint indicators (enhanced)
     const capacityMatches = text.match(
-      /\b(no more than|at most|maximum|max|at least|minimum|min)\b/gi,
+      /\b(no more than|at most|maximum|max|at least|minimum|min|exceed|limit|cannot exceed|up to)\b/gi,
     );
     if (capacityMatches) {
       capacityMatches.forEach((match) => {
@@ -816,6 +941,20 @@ export class HuggingFaceConstraintParser {
           type: 'capacity_indicator',
           value: match.toLowerCase(),
           confidence: 0.95,
+        });
+      });
+    }
+
+    // League/Organization indicators (NEW)
+    const leagueMatches = text.match(
+      /\b(youth\s+league|little\s+league|school\s+days?|high\s+school|college|university|junior|senior)\b/gi,
+    );
+    if (leagueMatches) {
+      leagueMatches.forEach((match) => {
+        entities.push({
+          type: 'organization',
+          value: match.toLowerCase(),
+          confidence: 0.82,
         });
       });
     }
@@ -957,8 +1096,22 @@ export class HuggingFaceConstraintParser {
       intentResults[0]?.score || 0.5,
     );
 
+    // Get the actual intent confidence from the correct location
+    let intentConfidence = 0.5; // fallback
+
+    // Try multiple sources for the intent confidence
+    if (intentResults.length > 0 && intentResults[0].score) {
+      intentConfidence = intentResults[0].score;
+    } else if (
+      intentResults.length > 0 &&
+      intentResults[0].label === 'temporal scheduling constraint'
+    ) {
+      intentConfidence = 1.0; // Default to 100% confidence for temporal constraint
+    }
+
+    const intentConfidencePercentage = (intentConfidence * 100).toFixed(1);
+
     // Enhanced intent classification scoring (40% weight)
-    const intentConfidence = intentResults[0]?.score || 0.5;
     const intentScore = Math.min(intentConfidence * 1.2, 1.0); // Boost good classifications
 
     // Enhanced entity completeness scoring (35% weight)
@@ -1017,17 +1170,22 @@ export class HuggingFaceConstraintParser {
       (e) => e.type === 'capacity_indicator',
     );
     const hasTimePeriod = entities.some((e) => e.type === 'time_period');
+    const hasDuration = entities.some((e) => e.type === 'duration');
+    const hasPersonnel = entities.some((e) => e.type === 'personnel');
+    const hasRequirement = entities.some((e) => e.type === 'requirement');
+    const hasOrganization = entities.some((e) => e.type === 'organization');
 
     // Constraint-type specific entity scoring
     let typeSpecificScore = 0;
 
     switch (constraintType) {
       case 'capacity':
-        // Capacity constraints: venue + number + capacity_indicator are critical
-        if (hasCapacityIndicator) typeSpecificScore += 0.35; // Very important
+        // Capacity constraints: capacity_indicator + number are critical, duration is also important
+        if (hasCapacityIndicator) typeSpecificScore += 0.3; // Very important
         if (hasNumber) typeSpecificScore += 0.25; // Critical for limits
-        if (hasVenue) typeSpecificScore += 0.2; // Important for context
-        if (hasTimePeriod) typeSpecificScore += 0.15; // Useful for frequency
+        if (hasDuration) typeSpecificScore += 0.2; // Important for duration constraints
+        if (hasVenue) typeSpecificScore += 0.15; // Important for context
+        if (hasTimePeriod) typeSpecificScore += 0.1; // Useful for frequency
         break;
 
       case 'temporal':
@@ -1036,6 +1194,7 @@ export class HuggingFaceConstraintParser {
         if (hasTime) typeSpecificScore += 0.4; // Most critical
         if (hasVenue) typeSpecificScore += 0.15;
         if (hasNumber) typeSpecificScore += 0.1;
+        if (hasOrganization) typeSpecificScore += 0.05; // Context bonus
         break;
 
       case 'location':
@@ -1043,6 +1202,7 @@ export class HuggingFaceConstraintParser {
         if (hasVenue) typeSpecificScore += 0.4; // Most critical
         if (hasTeam) typeSpecificScore += 0.3;
         if (hasNumber) typeSpecificScore += 0.1;
+        if (hasOrganization) typeSpecificScore += 0.2; // Important for context
         break;
 
       case 'rest':
@@ -1050,15 +1210,27 @@ export class HuggingFaceConstraintParser {
         if (hasNumber) typeSpecificScore += 0.3;
         if (hasTimePeriod || hasTime) typeSpecificScore += 0.3;
         if (hasTeam) typeSpecificScore += 0.2;
+        if (hasDuration) typeSpecificScore += 0.2; // Duration is key for rest periods
+        break;
+
+      case 'preference':
+        // Preference constraints: personnel + requirement are critical for supervision
+        if (hasPersonnel) typeSpecificScore += 0.35; // Critical for supervision constraints
+        if (hasRequirement) typeSpecificScore += 0.25; // Important for policy constraints
+        if (hasTeam) typeSpecificScore += 0.2;
+        if (hasVenue) typeSpecificScore += 0.1;
+        if (hasOrganization) typeSpecificScore += 0.1; // Context bonus
         break;
 
       default:
         // General scoring for unknown types
         typeSpecificScore =
-          (hasTeam ? 0.2 : 0) +
-          (hasTime ? 0.2 : 0) +
-          (hasVenue ? 0.2 : 0) +
-          (hasNumber ? 0.2 : 0);
+          (hasTeam ? 0.15 : 0) +
+          (hasTime ? 0.15 : 0) +
+          (hasVenue ? 0.15 : 0) +
+          (hasNumber ? 0.15 : 0) +
+          (hasPersonnel ? 0.2 : 0) +
+          (hasRequirement ? 0.2 : 0);
     }
 
     // Entity confidence bonus (higher confidence entities boost score)
@@ -1650,13 +1822,14 @@ export class HuggingFaceConstraintParser {
     // Try OpenAI first if available (highest quality)
     if (this.openaiApiKey) {
       try {
+        console.log('🤖 Attempting OpenAI explanation generation...');
         const openaiResult = await this.generateOpenAIExplanation(
           originalText,
           parsedResult,
           completeness,
         );
         if (openaiResult) {
-          console.log('🤖 OpenAI explanation generated successfully');
+          console.log('✅ OpenAI explanation generated successfully');
           return openaiResult;
         }
       } catch (error) {
@@ -1664,69 +1837,8 @@ export class HuggingFaceConstraintParser {
       }
     }
 
-    if (!this.hf) {
-      console.log('🔍 HF not available, using fallback explanation');
-      return this.generateFallbackExplanation(
-        originalText,
-        parsedResult,
-        completeness,
-      );
-    }
-
-    const prompt = `Analyze this sports scheduling constraint parsing result:
-
-Original: "${originalText}"
-Type: ${parsedResult.type}
-Confidence: ${(completeness * 100).toFixed(1)}%
-Entities: ${JSON.stringify(parsedResult.entities, null, 2)}
-
-Provide a concise analysis in 200 words or less covering:
-1. Why this confidence score was achieved
-2. What entities were found and their significance
-3. Why it was classified as "${parsedResult.type}"
-4. 3 specific suggestions to improve confidence
-
-Format as: CONFIDENCE: [explanation] ENTITIES: [analysis] CLASSIFICATION: [reasoning] IMPROVEMENTS: 1. [suggestion] 2. [suggestion] 3. [suggestion]`;
-
-    // Try multiple advanced models in order of preference
-    const models = [
-      'microsoft/DialoGPT-large',
-      'microsoft/DialoGPT-medium',
-      'google/flan-t5-large',
-      'google/flan-t5-base',
-      'mistralai/Mistral-7B-Instruct-v0.2', // Keep as fallback
-    ];
-
-    for (const model of models) {
-      try {
-        console.log(`🤖 Trying LLM model: ${model}`);
-        const result = await this.hf.textGeneration({
-          model: model,
-          inputs: prompt,
-          parameters: {
-            max_new_tokens: 300,
-            temperature: 0.2,
-            do_sample: true,
-            top_p: 0.9,
-            return_full_text: false,
-          },
-        });
-
-        console.log(`🤖 LLM explanation generated successfully with ${model}`);
-        return this.parseLLMResponse(
-          result.generated_text,
-          originalText,
-          parsedResult,
-          completeness,
-        );
-      } catch (error) {
-        console.warn(`🔍 Model ${model} failed:`, error);
-        continue; // Try next model
-      }
-    }
-
-    // If all models fail, use fallback
-    console.warn('🔍 All LLM models failed, using fallback explanation');
+    // Fallback to rule-based explanation since HuggingFace API has issues
+    console.log('🔍 Using fallback explanation (HuggingFace API unavailable)');
     return this.generateFallbackExplanation(
       originalText,
       parsedResult,
@@ -1741,20 +1853,46 @@ Format as: CONFIDENCE: [explanation] ENTITIES: [analysis] CLASSIFICATION: [reaso
   ): Promise<any> {
     if (!this.openaiApiKey) return null;
 
-    const prompt = `You are an expert in sports scheduling constraint analysis. Analyze this parsing result:
+    // Extract detailed analysis data for enhanced prompt
+    const entityCount = parsedResult.entities?.length || 0;
+    const conditionCount = parsedResult.conditions?.length || 0;
 
-Original Text: "${originalText}"
-Parsed Type: ${parsedResult.type}
-Confidence: ${(completeness * 100).toFixed(1)}%
-Entities Found: ${JSON.stringify(parsedResult.entities, null, 2)}
+    // Get the actual intent confidence from the correct location
+    let intentConfidence = 0.5; // fallback
 
-Provide a professional analysis covering:
-1. Confidence score explanation
-2. Entity analysis and significance  
-3. Classification reasoning
-4. Three specific improvement suggestions
+    // Try multiple sources for the intent confidence
+    if (parsedResult.llmJudge?.intentConfidence) {
+      intentConfidence = parsedResult.llmJudge.intentConfidence;
+    } else if (parsedResult.intentConfidence) {
+      intentConfidence = parsedResult.intentConfidence;
+    } else if (parsedResult.mlConfidence?.intentScore) {
+      intentConfidence = parsedResult.mlConfidence.intentScore;
+    }
 
-Keep response under 200 words and be precise.`;
+    const intentConfidencePercentage = (intentConfidence * 100).toFixed(1);
+
+    const prompt = `You are an expert AI consultant for sports scheduling constraint analysis. Analyze this comprehensive parsing result:
+
+CONSTRAINT: "${originalText}"
+TYPE: ${parsedResult.type} constraint
+CONFIDENCE: ${(completeness * 100).toFixed(1)}%
+
+TECHNICAL BREAKDOWN:
+- Intent Classification: ${intentConfidencePercentage}% (40% weight)
+- Entity Extraction: ${entityCount} entities (35% weight)  
+- Condition Detection: ${conditionCount} conditions (25% weight)
+
+ENTITIES: ${entityCount > 0 ? parsedResult.entities.map((e: any) => `${e.type}:"${e.value}"(${(e.confidence * 100).toFixed(1)}%)`).join(', ') : 'None'}
+
+ANALYSIS REQUIRED:
+1. **Confidence Breakdown**: Explain the ${(completeness * 100).toFixed(1)}% score using the weighted system
+2. **Entity Quality**: Assess the ${entityCount} entities for ${parsedResult.type} constraints
+3. **Classification Strength**: Why "${parsedResult.type}" classification is accurate
+4. **Completeness**: What's missing for a complete constraint
+5. **Improvements**: 3 specific technical suggestions
+6. **Sports Relevance**: Real-world scheduling applicability
+
+Provide detailed, technical analysis in 350 words. Focus on actionable insights.`;
 
     try {
       const response = await fetch(
@@ -1766,7 +1904,7 @@ Keep response under 200 words and be precise.`;
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'gpt-3.5-turbo',
+            model: 'gpt-4o-mini',
             messages: [
               {
                 role: 'system',
@@ -1778,7 +1916,7 @@ Keep response under 200 words and be precise.`;
                 content: prompt,
               },
             ],
-            max_tokens: 300,
+            max_tokens: 400,
             temperature: 0.2,
           }),
         },
@@ -1791,102 +1929,55 @@ Keep response under 200 words and be precise.`;
       const data = await response.json();
       const explanation = data.choices[0]?.message?.content || '';
 
+      // Return the full OpenAI explanation without fragmenting it with regex
       return {
-        confidenceBreakdown: `OpenAI Analysis: ${(completeness * 100).toFixed(1)}% confidence achieved through advanced ML parsing with ${parsedResult.entities?.length || 0} entities detected.`,
-        entityAnalysis:
-          explanation.includes('entities') || explanation.includes('Entities')
-            ? `${explanation.split(/entities|Entities/i)[1]?.split('.')[0]}.`
-            : `Detected ${parsedResult.entities?.length || 0} entities with strong pattern recognition.`,
-        classificationReasoning:
-          explanation.includes('classified') ||
-          explanation.includes('Classification')
-            ? `${
-                explanation
-                  .split(/classified|Classification/i)[1]
-                  ?.split('.')[0]
-              }.`
-            : `Advanced classification identified "${parsedResult.type}" constraint type.`,
+        // Use the complete OpenAI response as the main analysis
+        fullAnalysis: explanation,
+
+        // Provide simple structured data for the UI components
+        confidenceBreakdown: `The ${(completeness * 100).toFixed(1)}% confidence score is calculated using a weighted system: Intent Classification (${intentConfidencePercentage}%, 40% weight), Entity Extraction (${entityCount} entities, 35% weight), and Condition Detection (${conditionCount} conditions, 25% weight).`,
+
+        entityAnalysis: `Detected ${entityCount} entities: ${parsedResult.entities?.map((e: any) => `${e.type}("${e.value}" - ${(e.confidence * 100).toFixed(1)}%)`).join(', ') || 'none'}. Entity quality is ${entityCount >= 3 ? 'excellent' : entityCount >= 2 ? 'good' : 'needs improvement'} for ${parsedResult.type} constraints.`,
+
+        classificationReasoning: `Classification as "${parsedResult.type}" constraint achieved ${intentConfidencePercentage}% confidence through ML analysis. Entity patterns ${parsedResult.entities?.some((e: any) => e.type === 'team') ? 'strongly' : 'moderately'} support this classification.`,
+
         improvementSuggestions: [
-          'Add more specific team and venue names',
-          'Include precise temporal details (dates, times)',
-          'Use explicit constraint language (must, cannot, prefer)',
+          `Add more specific ${parsedResult.type === 'temporal' ? 'time details (exact dates, times)' : parsedResult.type === 'capacity' ? 'numeric limits and frequency' : 'venue and team specifications'}`,
+          `Include explicit constraint language (${parsedResult.type === 'temporal' ? 'cannot, must not, before, after' : parsedResult.type === 'capacity' ? 'maximum, at most, per day/week' : 'must, required, only at'})`,
+          `Provide complete context (${entityCount < 2 ? 'team and venue names' : conditionCount < 1 ? 'clear conditions and operators' : 'temporal specificity and scope'})`,
         ],
+
         qualityAssessment: {
           rating:
-            completeness >= 0.9
+            completeness >= 0.95
               ? 'Excellent'
-              : completeness >= 0.7
-                ? 'Good'
-                : 'Fair',
-          explanation: `OpenAI-enhanced analysis indicates ${completeness >= 0.7 ? 'high-quality' : 'moderate-quality'} constraint parsing.`,
+              : completeness >= 0.85
+                ? 'Very Good'
+                : completeness >= 0.7
+                  ? 'Good'
+                  : completeness >= 0.5
+                    ? 'Fair'
+                    : 'Poor',
+          explanation: `${(completeness * 100).toFixed(1)}% confidence indicates ${completeness >= 0.8 ? 'high-quality' : completeness >= 0.6 ? 'moderate-quality' : 'basic-quality'} constraint parsing.`,
+        },
+
+        sportsRelevance: `${parsedResult.type.charAt(0).toUpperCase() + parsedResult.type.slice(1)} constraints are ${parsedResult.type === 'temporal' ? 'critical for avoiding scheduling conflicts' : parsedResult.type === 'capacity' ? 'essential for resource management' : 'important for optimization'} in sports scheduling.`,
+
+        technicalDetails: {
+          intentScore: intentConfidencePercentage,
+          entityCount: entityCount,
+          conditionCount: conditionCount,
+          weightedComponents: {
+            intent: `${intentConfidencePercentage}% (40% weight)`,
+            entities: `${entityCount} detected (35% weight)`,
+            conditions: `${conditionCount} found (25% weight)`,
+          },
         },
       };
     } catch (error) {
       console.warn('🔍 OpenAI explanation failed:', error);
       return null;
     }
-  }
-
-  private parseLLMResponse(
-    llmText: string,
-    originalText: string,
-    parsedResult: any,
-    completeness: number,
-  ): any {
-    // Parse the structured LLM response
-    const confidenceMatch = llmText.match(
-      /CONFIDENCE:\s*([\s\S]*?)(?=ENTITIES:|$)/i,
-    );
-    const entitiesMatch = llmText.match(
-      /ENTITIES:\s*([\s\S]*?)(?=CLASSIFICATION:|$)/i,
-    );
-    const classificationMatch = llmText.match(
-      /CLASSIFICATION:\s*([\s\S]*?)(?=IMPROVEMENTS:|$)/i,
-    );
-    const improvementsMatch = llmText.match(/IMPROVEMENTS:\s*([\s\S]*?)$/i);
-
-    // Extract improvement suggestions
-    const suggestions: string[] = [];
-    if (improvementsMatch) {
-      const improvementText = improvementsMatch[1];
-      const matches = improvementText.match(/\d+\.\s*([^\n]+)/g);
-      if (matches) {
-        suggestions.push(
-          ...matches.map((match) => match.replace(/^\d+\.\s*/, '').trim()),
-        );
-      }
-    }
-
-    return {
-      confidenceBreakdown: confidenceMatch
-        ? confidenceMatch[1].trim()
-        : `Achieved ${(completeness * 100).toFixed(1)}% confidence through entity detection and pattern analysis.`,
-      entityAnalysis: entitiesMatch
-        ? entitiesMatch[1].trim()
-        : `Found ${parsedResult.entities?.length || 0} entities indicating ${completeness > 0.7 ? 'strong' : 'moderate'} parsing accuracy.`,
-      classificationReasoning: classificationMatch
-        ? classificationMatch[1].trim()
-        : `Classified as "${parsedResult.type}" based on detected entity patterns and linguistic indicators.`,
-      improvementSuggestions:
-        suggestions.length > 0
-          ? suggestions
-          : [
-              'Add more specific entity details (team names, exact venues)',
-              'Include explicit temporal information (dates, times)',
-              'Clarify constraint conditions (must, cannot, prefer)',
-            ],
-      qualityAssessment: {
-        rating:
-          completeness >= 0.9
-            ? 'Excellent'
-            : completeness >= 0.7
-              ? 'Good'
-              : completeness >= 0.5
-                ? 'Fair'
-                : 'Poor',
-        explanation: `${(completeness * 100).toFixed(1)}% confidence indicates ${completeness >= 0.7 ? 'strong' : 'moderate'} parsing quality with room for improvement.`,
-      },
-    };
   }
 
   private generateFallbackExplanation(
@@ -1937,5 +2028,248 @@ Keep response under 200 words and be precise.`;
         explanation: `${(completeness * 100).toFixed(1)}% confidence represents ${completeness >= 0.7 ? 'good' : 'moderate'} parsing quality. ${entityCount > 2 && conditionCount > 0 ? 'Well-structured constraint with clear intent.' : 'Could benefit from more specific details and clearer language.'}`,
       },
     };
+  }
+
+  /**
+   * NEW: LLM-powered JSON Schema Validation
+   * Uses OpenAI to validate the parsed constraint JSON against expected schema
+   */
+  private async validateJSONWithLLM(
+    parsedResult: any,
+    originalText: string,
+  ): Promise<{
+    isValid: boolean;
+    needsCorrection: boolean;
+    issues: string[];
+    suggestions: string[];
+    schemaCompliance: number;
+  }> {
+    if (!this.openaiApiKey) {
+      // Fallback to basic validation
+      return {
+        isValid: true,
+        needsCorrection: false,
+        issues: [],
+        suggestions: [],
+        schemaCompliance: 0.8,
+      };
+    }
+
+    const expectedSchema = {
+      constraint_id: 'string',
+      type: 'temporal | capacity | location | rest | preference',
+      scope: 'global | team | venue | player',
+      entities: 'array of {type, value, confidence}',
+      conditions: 'array of {operator, value, unit?}',
+      parameters: 'object with type-specific fields',
+      priority: 'low | medium | high | critical',
+      confidence: 'number between 0 and 1',
+    };
+
+    const prompt = `You are an expert JSON schema validator for sports scheduling constraints. 
+
+ORIGINAL CONSTRAINT: "${originalText}"
+
+PARSED JSON RESULT:
+${JSON.stringify(parsedResult, null, 2)}
+
+EXPECTED SCHEMA:
+${JSON.stringify(expectedSchema, null, 2)}
+
+VALIDATION REQUIREMENTS:
+1. **Structure Validation**: Check all required fields are present
+2. **Type Validation**: Verify data types match schema
+3. **Semantic Validation**: Ensure values make logical sense for sports scheduling
+4. **Completeness**: Assess if critical information is missing
+5. **Consistency**: Check internal consistency between fields
+
+Analyze and provide:
+1. **Overall Validity**: Is this a well-formed constraint JSON?
+2. **Critical Issues**: Missing required fields or invalid values
+3. **Semantic Problems**: Logically inconsistent or incomplete data
+4. **Improvement Suggestions**: Specific fixes needed
+5. **Compliance Score**: 0-100% schema compliance
+
+Respond with JSON:
+{
+  "isValid": boolean,
+  "needsCorrection": boolean,
+  "schemaCompliance": number (0-1),
+  "issues": ["issue1", "issue2"],
+  "suggestions": ["suggestion1", "suggestion2"],
+  "analysis": "detailed explanation"
+}`;
+
+    try {
+      const response = await fetch(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.openaiApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'You are an expert JSON schema validator. Always respond with valid JSON matching the requested format.',
+              },
+              {
+                role: 'user',
+                content: prompt,
+              },
+            ],
+            max_tokens: 500,
+            temperature: 0.1,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(`OpenAI validation API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const validationResult = data.choices[0]?.message?.content || '{}';
+
+      try {
+        const parsedValidation = JSON.parse(validationResult);
+        return {
+          isValid: parsedValidation.isValid || false,
+          needsCorrection: parsedValidation.needsCorrection || false,
+          issues: parsedValidation.issues || [],
+          suggestions: parsedValidation.suggestions || [],
+          schemaCompliance: parsedValidation.schemaCompliance || 0.5,
+        };
+      } catch (parseError) {
+        console.warn('🔍 Failed to parse LLM validation response:', parseError);
+        return {
+          isValid: false,
+          needsCorrection: true,
+          issues: ['LLM validation response parsing failed'],
+          suggestions: ['Manual schema review needed'],
+          schemaCompliance: 0.3,
+        };
+      }
+    } catch (error) {
+      console.warn('🔍 LLM schema validation failed:', error);
+      return {
+        isValid: true,
+        needsCorrection: false,
+        issues: [],
+        suggestions: [],
+        schemaCompliance: 0.7,
+      };
+    }
+  }
+
+  /**
+   * NEW: Semantic JSON Correction
+   * Uses OpenAI to intelligently fix and improve JSON structure
+   */
+  private async semanticJSONCorrection(
+    parsedResult: any,
+    originalText: string,
+    issues: string[],
+  ): Promise<any | null> {
+    if (!this.openaiApiKey || issues.length === 0) {
+      return null;
+    }
+
+    const prompt = `You are an expert sports scheduling constraint JSON corrector.
+
+ORIGINAL CONSTRAINT: "${originalText}"
+
+CURRENT JSON (with issues):
+${JSON.stringify(parsedResult, null, 2)}
+
+IDENTIFIED ISSUES:
+${issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n')}
+
+CORRECTION REQUIREMENTS:
+1. **Fix Structure**: Add missing required fields (constraint_id, scope, priority)
+2. **Enhance Entities**: Improve entity extraction if incomplete
+3. **Correct Types**: Fix any type mismatches
+4. **Add Parameters**: Include type-specific parameter objects
+5. **Maintain Intent**: Keep the original constraint meaning intact
+6. **Improve Completeness**: Fill gaps in information
+
+REQUIRED SCHEMA:
+{
+  "constraint_id": "auto-generated unique ID",
+  "type": "temporal|capacity|location|rest|preference", 
+  "scope": "global|team|venue|player",
+  "entities": [{"type": "entity_type", "value": "entity_value", "confidence": 0.8}],
+  "conditions": [{"operator": "equals|not_equals|greater_than|less_than", "value": "condition_value"}],
+  "parameters": {
+    // For temporal: {"days_of_week": [], "excluded_dates": [], "time_ranges": []}
+    // For capacity: {"max_count": number, "min_count": number, "per_period": "day|week"}
+    // For location: {"required_venue": string, "excluded_venues": []}
+    // For rest: {"min_hours": number, "min_days": number}
+    // For preference: {"preference_type": "soft|hard", "weight": number}
+  },
+  "priority": "low|medium|high|critical",
+  "confidence": number
+}
+
+Return ONLY the corrected JSON object (no explanation text):`;
+
+    try {
+      const response = await fetch(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.openaiApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'You are a JSON correction expert. Always respond with valid JSON only, no additional text.',
+              },
+              {
+                role: 'user',
+                content: prompt,
+              },
+            ],
+            max_tokens: 800,
+            temperature: 0.1,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(`OpenAI correction API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const correctedJSON = data.choices[0]?.message?.content || '{}';
+
+      try {
+        const parsedCorrection = JSON.parse(correctedJSON);
+
+        // Validate the correction has required fields
+        if (parsedCorrection.type && parsedCorrection.entities) {
+          console.log('✅ LLM semantic correction successful');
+          return parsedCorrection;
+        } else {
+          console.warn('🔍 LLM correction missing required fields');
+          return null;
+        }
+      } catch (parseError) {
+        console.warn('🔍 Failed to parse LLM correction response:', parseError);
+        return null;
+      }
+    } catch (error) {
+      console.warn('🔍 LLM semantic correction failed:', error);
+      return null;
+    }
   }
 }

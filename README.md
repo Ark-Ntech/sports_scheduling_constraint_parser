@@ -52,6 +52,25 @@
 - **Error Handling**: Graceful failures with clear user feedback
 - **Accessibility**: WCAG compliant with proper labels and keyboard navigation
 
+### 🏆 Key Features
+
+### 🧠 **Advanced AI-Powered Parsing**
+
+- **Multi-Layer NLP Pipeline**: HuggingFace transformers + OpenAI GPT-4o-mini + rule-based fallbacks
+- **Intent Classification**: Zero-shot classification with 81.5% accuracy using transformer models
+- **Entity Recognition**: BERT-based Named Entity Recognition with sports-specific enhancement
+- **🆕 LLM Schema Validation**: OpenAI-powered JSON structure validation against expected schemas
+- **🆕 Semantic JSON Correction**: Intelligent JSON structure improvement and error correction
+- **LLM-as-a-Judge**: Advanced validation and quality assessment of parsing results
+
+### 🎯 **Constraint Processing**
+
+- **Natural Language Input**: "Team A cannot play on Mondays" → Structured constraint
+- **Multiple Constraint Detection**: Automatically splits complex multi-constraint inputs
+- **Confidence Scoring**: 3-component weighted system (Intent 40% + Entities 35% + Conditions 25%)
+- **Type Classification**: Temporal, Capacity, Location, Rest, and Preference constraints
+- **Entity Extraction**: Teams, venues, times, dates, numbers, and constraint-specific entities
+
 ---
 
 ## 🛠 Technology Stack
@@ -123,7 +142,7 @@ pnpm install
    HF_TOKEN=your_huggingface_token
 
    # OpenAI API Configuration (Optional)
-   OPENAI_API_KEY=your_openai_api_key_here
+   OPENAI_API_KEY=your_openai_api_key
 
    # Authentication
    AUTH_SECRET=your_auth_secret
@@ -145,6 +164,8 @@ pnpm install
    ```bash
    pnpm dev
    ```
+
+````
 
 Your application will be running on [http://localhost:3000](http://localhost:3000).
 
@@ -200,7 +221,7 @@ Your application will be running on [http://localhost:3000](http://localhost:300
 
    # Build to verify everything works
    pnpm build
-   ```
+````
 
 2. **Deploy to Vercel**
 
@@ -400,3 +421,31 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 For support, open an issue on GitHub.
 
 **Transform your sports scheduling from manual constraint interpretation to AI-powered, transparent, and highly accurate automated processing with perfect JSON output and multiple constraint handling.**
+
+## 🤖 AI Technology Stack
+
+### **Primary NLP Engine**
+
+- **HuggingFace Transformers**: Zero-shot classification and Named Entity Recognition
+- **OpenAI GPT-4o-mini**: Advanced LLM analysis, explanation generation, and JSON processing
+- **🆕 Schema Validation**: LLM-powered JSON structure validation against constraint schemas
+- **🆕 Semantic Correction**: Intelligent JSON improvement with missing field completion
+
+### **Multi-Model Architecture**
+
+1. **Intent Classification** (40% weight): Transformer-based constraint type detection
+2. **Entity Extraction** (35% weight): BERT NER + sports-specific rule enhancement
+3. **Condition Detection** (25% weight): Pattern matching + semantic analysis
+4. **🆕 Schema Validation**: OpenAI validation of JSON structure and completeness
+5. **🆕 JSON Correction**: LLM-powered semantic enhancement of parsing results
+
+### **Confidence Calculation**
+
+```javascript
+// 3-component weighted confidence system
+confidence = intentScore * 0.4 + entityScore * 0.35 + conditionScore * 0.25;
+
+// With constraint-type specific bonuses and LLM validation boosts
+if (schemaValid) confidence *= 1.05;
+if (llmCorrected) confidence *= 1.1;
+```

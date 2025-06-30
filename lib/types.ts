@@ -243,7 +243,10 @@ export type EntityType =
   | 'duration'
   | 'number'
   | 'time_period'
-  | 'capacity_indicator';
+  | 'capacity_indicator'
+  | 'personnel' // Added for supervision requirements
+  | 'requirement' // Added for policy indicators
+  | 'organization'; // Added for league/organization indicators
 
 export interface Condition {
   operator: ConditionOperator;

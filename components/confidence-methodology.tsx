@@ -310,7 +310,7 @@ export function ConfidenceMethodology({
               )}
             </div>
 
-            <div className="grid md:grid-cols-2 gap-4 mb-4">
+            <div className="grid md:grid-cols-1 gap-4 mb-4">
               {/* Classification Decision */}
               <div className="bg-white/70 rounded-lg p-3 border border-purple-200">
                 <div className="flex items-center gap-2 mb-2">
@@ -339,57 +339,27 @@ export function ConfidenceMethodology({
                   )}
                 </div>
               </div>
+            </div>
 
-              {/* Entity Pattern Analysis */}
-              <div className="bg-white/70 rounded-lg p-3 border border-blue-200">
-                <div className="flex items-center gap-2 mb-2">
-                  <Zap className="h-4 w-4 text-blue-600" />
-                  <h5 className="font-medium text-blue-700 text-sm">
-                    Entity Pattern Analysis
-                  </h5>
+            {/* Full OpenAI Analysis - NEW SECTION */}
+            {explanation?.fullAnalysis && (
+              <div className="mt-4 bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 rounded-lg p-4 border border-purple-200">
+                <div className="flex items-center gap-2 mb-3">
+                  <Sparkles className="h-5 w-5 text-purple-600" />
+                  <h4 className="font-medium text-purple-800 text-base">
+                    Complete AI Analysis
+                  </h4>
+                  <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
+                    OpenAI GPT-4o-mini
+                  </span>
                 </div>
-                <div className="text-sm space-y-1 text-gray-800">
-                  <div className="flex items-center justify-between">
-                    <span>Capacity Indicator:</span>
-                    <span
-                      className={
-                        hasCapacityIndicator
-                          ? 'text-green-600'
-                          : 'text-gray-400'
-                      }
-                    >
-                      {hasCapacityIndicator ? '✓' : '○'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>Venue:</span>
-                    <span
-                      className={hasVenue ? 'text-green-600' : 'text-gray-400'}
-                    >
-                      {hasVenue ? '✓' : '○'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>Numbers:</span>
-                    <span
-                      className={hasNumber ? 'text-green-600' : 'text-gray-400'}
-                    >
-                      {hasNumber ? '✓' : '○'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>Time Period:</span>
-                    <span
-                      className={
-                        hasTimePeriod ? 'text-green-600' : 'text-gray-400'
-                      }
-                    >
-                      {hasTimePeriod ? '✓' : '○'}
-                    </span>
+                <div className="prose prose-sm max-w-none text-gray-800 leading-relaxed">
+                  <div className="whitespace-pre-wrap bg-white/70 rounded p-3 border border-purple-100">
+                    {explanation.fullAnalysis}
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* AI-Generated Analysis */}
             {explanation && (

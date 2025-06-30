@@ -89,6 +89,86 @@ Perfect adherence to the specified JSON schema:
 }
 ```
 
+#### 4. LLM-Powered JSON Processing 🆕
+
+##### **Schema Validation with LLMs**
+
+The system now includes OpenAI-powered JSON structure validation:
+
+```typescript
+interface SchemaValidationResult {
+  isValid: boolean;
+  needsCorrection: boolean;
+  issues: string[];
+  suggestions: string[];
+  schemaCompliance: number; // 0-1 score
+}
+
+// Validates against expected constraint schema
+const validation = await validateJSONWithLLM(parsedResult, originalText);
+```
+
+**Validation Checklist:**
+
+- ✅ **Structure Validation**: Required fields presence
+- ✅ **Type Validation**: Data type correctness
+- ✅ **Semantic Validation**: Logical consistency for sports scheduling
+- ✅ **Completeness Assessment**: Missing critical information detection
+- ✅ **Consistency Check**: Internal field consistency
+
+##### **Semantic JSON Correction**
+
+When validation issues are detected, the system automatically applies LLM-powered corrections:
+
+```typescript
+// Auto-correction process
+if (!schemaValidation.isValid || schemaValidation.needsCorrection) {
+  const correctedResult = await semanticJSONCorrection(
+    result,
+    text,
+    schemaValidation.issues
+  );
+  if (correctedResult) {
+    result = { ...result, ...correctedResult };
+    result.wasCorreected = true;
+  }
+}
+```
+
+**Correction Capabilities:**
+
+- 🔧 **Missing Fields**: Adds constraint_id, scope, priority
+- 🔧 **Entity Enhancement**: Improves incomplete entity extraction
+- 🔧 **Type Correction**: Fixes data type mismatches
+- 🔧 **Parameter Completion**: Fills type-specific parameter objects
+- 🔧 **Intent Preservation**: Maintains original constraint meaning
+
+##### **Enhanced Processing Pipeline**
+
+The system now uses a 5-layer processing architecture:
+
+```
+1. ML Parsing (HF + OpenAI) →
+2. Type-Specific Enhancement →
+3. LLM Judge Validation →
+4. Schema Validation →
+5. Semantic Correction
+```
+
+**Confidence Boost Logic:**
+
+```javascript
+// Schema validation confidence boost
+if (schemaValidation.isValid) {
+  result.confidence = Math.min(result.confidence * 1.05, 1.0);
+}
+
+// LLM correction confidence boost
+if (result.wasCorreected) {
+  result.confidence = Math.min(result.confidence * 1.1, 1.0);
+}
+```
+
 ## NLP Approach and Design Decisions
 
 ### Hybrid Intelligence Architecture

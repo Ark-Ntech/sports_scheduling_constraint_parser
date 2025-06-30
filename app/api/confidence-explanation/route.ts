@@ -31,11 +31,15 @@ export async function POST(request: NextRequest) {
       process.env.HUGGINGFACE_API_KEY ||
       process.env.HF_ACCESS_TOKEN;
 
+    // Always generate fallback explanation first
+    const fallbackExplanation = generateFallbackExplanation(
+      parsedResult,
+      originalText,
+    );
+
     if (!accessToken) {
-      return NextResponse.json(
-        { error: 'HuggingFace access token not configured' },
-        { status: 500 },
-      );
+      console.log('🔄 Using fallback explanation (no HuggingFace token)');
+      return NextResponse.json({ explanation: fallbackExplanation });
     }
 
     const hf = new HfInference(accessToken);
@@ -90,38 +94,29 @@ Provide clear, technical explanations that would help users understand how the A
         explanation = {
           confidenceBreakdown:
             extractSection(text, 'CONFIDENCE BREAKDOWN') ||
-            `The confidence score of ${(parsedResult.confidence * 100).toFixed(1)}% reflects the system's assessment of parsing accuracy based on multiple factors including intent classification, entity completeness, and condition detection.`,
+            fallbackExplanation.confidenceBreakdown,
           entityAnalysis:
             extractSection(text, 'ENTITY ANALYSIS') ||
-            `Found ${parsedResult.entities?.length || 0} entities with varying confidence levels, indicating ${parsedResult.entities?.length > 3 ? 'strong' : 'moderate'} entity extraction performance.`,
+            fallbackExplanation.entityAnalysis,
           classificationReasoning:
             extractSection(text, 'CLASSIFICATION REASONING') ||
-            `Classified as "${parsedResult.type}" constraint based on entity patterns and linguistic indicators in the original text.`,
-          improvementSuggestions: extractSuggestions(text) || [
-            'Add more specific temporal details (exact dates, times)',
-            'Clarify the scope and context of the constraint',
-            'Provide additional entity information (team names, specific venues)',
-            'Include explicit condition operators (must, cannot, should)',
-            'Add quantitative details where applicable',
-          ],
+            fallbackExplanation.classificationReasoning,
+          improvementSuggestions:
+            extractSuggestions(text) ||
+            fallbackExplanation.improvementSuggestions,
           qualityAssessment: {
             rating: getQualityRating(parsedResult.confidence),
             explanation:
               extractSection(text, 'QUALITY ASSESSMENT') ||
-              `Based on the ${(parsedResult.confidence * 100).toFixed(1)}% confidence score, this represents ${getQualityRating(parsedResult.confidence).toLowerCase()} parsing quality.`,
+              fallbackExplanation.qualityAssessment.explanation,
           },
         };
       }
 
+      console.log('✅ Enhanced explanation generated with HuggingFace');
       return NextResponse.json({ explanation });
     } catch (hfError) {
-      console.error('HuggingFace API error:', hfError);
-
-      // Fallback to rule-based explanation
-      const fallbackExplanation = generateFallbackExplanation(
-        parsedResult,
-        originalText,
-      );
+      console.error('HuggingFace API error, using fallback:', hfError);
       return NextResponse.json({ explanation: fallbackExplanation });
     }
   } catch (error) {

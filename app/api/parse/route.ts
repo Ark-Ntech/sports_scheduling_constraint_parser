@@ -267,10 +267,10 @@ function splitMultipleConstraints(text: string): string[] {
   if (constraints.length === 1) {
     // If still one constraint, try other separators
     const separators = [
-      /\s+and\s+(?=(?:team|no|maximum|minimum|at\s+least|at\s+most|field|court|venue|eagles|games|must|cannot)\s)/gi, // "and" followed by constraint keywords
+      /\s+and\s+(?=(?:team|no|maximum|minimum|at\s+least|at\s+most|field|court|venue|eagles|games|must|cannot|require|need)\s)/gi, // "and" followed by constraint keywords
       /\s*;\s*/g, // semicolon
       /\s*\.\s*(?=[A-Z])/g, // period followed by capital letter (new sentence)
-      /\s*,\s*(?=(?:team|no|maximum|minimum|at\s+least|at\s+most|field|court|venue|eagles|games|must|cannot)\s)/gi, // comma before constraint keywords
+      /\s*,\s*(?=(?:team|no|maximum|minimum|at\s+least|at\s+most|field|court|venue|eagles|games|must|cannot|require|need)\s)/gi, // comma before constraint keywords
     ];
 
     // Apply each separator
@@ -283,7 +283,7 @@ function splitMultipleConstraints(text: string): string[] {
           const validSplits = split.filter((part) => {
             const trimmed = part.trim();
             return (
-              trimmed.length > 15 && // Must be substantial (increased from 10)
+              trimmed.length > 10 && // Reduced minimum length to catch shorter supervision requirements
               (trimmed.toLowerCase().includes('team') ||
                 trimmed.toLowerCase().includes('field') ||
                 trimmed.toLowerCase().includes('game') ||
@@ -294,10 +294,16 @@ function splitMultipleConstraints(text: string): string[] {
                 trimmed.toLowerCase().includes('cannot') ||
                 trimmed.toLowerCase().includes('must') ||
                 trimmed.toLowerCase().includes('need') ||
+                trimmed.toLowerCase().includes('require') || // Added require
                 trimmed.toLowerCase().includes('between') ||
                 trimmed.toLowerCase().includes('home') ||
                 trimmed.toLowerCase().includes('venue') ||
                 trimmed.toLowerCase().includes('court') ||
+                trimmed.toLowerCase().includes('exceed') || // Added exceed for duration constraints
+                trimmed.toLowerCase().includes('duration') || // Added duration
+                trimmed.toLowerCase().includes('supervision') || // Added supervision
+                trimmed.toLowerCase().includes('minutes') || // Added time units
+                trimmed.toLowerCase().includes('hours') || // Added time units
                 trimmed.toLowerCase().includes('eagles'))
             );
           });
@@ -318,7 +324,7 @@ function splitMultipleConstraints(text: string): string[] {
   // Clean up and filter results
   const finalConstraints = constraints
     .map((constraint) => constraint.trim())
-    .filter((constraint) => constraint.length > 10) // Filter out very short fragments
+    .filter((constraint) => constraint.length > 8) // Reduced from 10 to catch supervision requirements
     .filter((constraint) => {
       // Filter out fragments that don't look like complete constraints
       const lower = constraint.toLowerCase();
@@ -333,12 +339,18 @@ function splitMultipleConstraints(text: string): string[] {
         lower.includes('cannot') ||
         lower.includes('must') ||
         lower.includes('need') ||
+        lower.includes('require') || // Added require
         lower.includes('between') ||
         lower.includes('home') ||
         lower.includes('venue') ||
         lower.includes('court') ||
         lower.includes('before') ||
         lower.includes('after') ||
+        lower.includes('exceed') || // Added exceed
+        lower.includes('duration') || // Added duration
+        lower.includes('supervision') || // Added supervision
+        lower.includes('minutes') || // Added time units
+        lower.includes('hours') || // Added time units
         lower.includes('eagles') ||
         lower.includes('played')
       );

@@ -1,7 +1,7 @@
 {
   "name": "sports-scheduling-constraint-parser",
-  "version": "1.0.0",
-  "description": "A sophisticated natural language processor for sports scheduling constraints with comprehensive management and calendar integration",
+  "version": "2.1.0",
+  "description": "Advanced NLP-powered sports scheduling constraint parser with LLM schema validation and semantic JSON correction",
   "private": true,
   "license": "MIT",
   "author": "Sports Scheduling Constraint Parser Contributors",
