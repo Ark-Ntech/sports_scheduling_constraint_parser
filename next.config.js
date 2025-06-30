@@ -1,6 +1,5 @@
-import type { NextConfig } from 'next';
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   // Temporarily disable experimental features that might interfere with API routes
   // experimental: {
   //   ppr: true,
@@ -22,15 +21,15 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // Ensure API routes are properly handled
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: '/api/:path*',
-      },
-    ];
-  },
+  // Remove problematic rewrites that may interfere with API routes
+  // async rewrites() {
+  //   return [
+  //     {
+  //       source: '/api/:path*',
+  //       destination: '/api/:path*',
+  //     },
+  //   ];
+  // },
 };
 
-export default nextConfig;
+module.exports = nextConfig;
