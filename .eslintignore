@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+.next/
+.vercel/
+
+# Build outputs
+out/
+dist/
+build/
+
+# Temporary ignore for deployment
+components/confidence-methodology.tsx
+components/constraint-parser.tsx
+components/enhanced-constraint-set-manager.tsx
+
+# Auto-generated files
+*.tsbuildinfo 
