@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Constraint Parser Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        textarea {
+            width: 100%;
+            min-height: 100px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .example {
+            background: #e9ecef;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            cursor: pointer;
+            border: 1px solid #ced4da;
+        }
+        .example:hover {
+            background: #dee2e6;
+        }
+        .examples-section {
+            margin-bottom: 20px;
+        }
+        h1, h2, h3 {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Sports Scheduling Constraint Parser Test</h1>
+        <p>Test the natural language constraint parsing functionality.</p>
+        
+        <div class="examples-section">
+            <h3>Example Constraints (click to use):</h3>
+            <div class="example" onclick="setConstraint('Team A cannot play on Mondays')">
+                "Team A cannot play on Mondays" - Temporal constraint
+            </div>
+            <div class="example" onclick="setConstraint('No more than 3 games per day on Field 1')">
+                "No more than 3 games per day on Field 1" - Capacity constraint
+            </div>
+            <div class="example" onclick="setConstraint('Teams need at least 2 days between games')">
+                "Teams need at least 2 days between games" - Rest constraint
+            </div>
+            <div class="example" onclick="setConstraint('Home team must play at their home venue')">
+                "Home team must play at their home venue" - Location constraint
+            </div>
+            <div class="example" onclick="setConstraint('Basketball games cannot be scheduled after 9 PM')">
+                "Basketball games cannot be scheduled after 9 PM" - Temporal constraint
+            </div>
+        </div>
+
+        <h3>Enter Constraint:</h3>
+        <textarea id="constraintInput" placeholder="Enter your scheduling constraint in plain English..."></textarea>
+        
+        <button onclick="parseConstraint()" id="parseBtn">Parse Constraint</button>
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        function setConstraint(text) {
+            document.getElementById('constraintInput').value = text;
+            document.getElementById('result').innerHTML = '';
+        }
+
+        async function parseConstraint() {
+            const text = document.getElementById('constraintInput').value.trim();
+            const resultDiv = document.getElementById('result');
+            const parseBtn = document.getElementById('parseBtn');
+            
+            if (!text) {
+                resultDiv.innerHTML = '<div class="result error">Please enter a constraint to parse.</div>';
+                return;
+            }
+
+            parseBtn.disabled = true;
+            parseBtn.textContent = 'Parsing...';
+            resultDiv.innerHTML = '<div class="result">Parsing constraint...</div>';
+
+            try {
+                const response = await fetch('/api/parse', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        text: text
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    resultDiv.innerHTML = `
+                        <div class="result success">
+                            <h4>✅ Parsing Successful!</h4>
+                            <strong>Input:</strong> "${text}"
+                            
+                            <strong>Parsed Result:</strong>
+                            ${JSON.stringify(data.data, null, 2)}
+                            
+                            <strong>Confidence Score:</strong> ${(data.data.confidence * 100).toFixed(1)}%
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="result error">
+                            <h4>❌ Parsing Failed</h4>
+                            <strong>Error:</strong> ${data.error || 'Unknown error'}
+                            <strong>Status:</strong> ${response.status}
+                            ${data.details ? '<strong>Details:</strong> ' + data.details : ''}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="result error">
+                        <h4>❌ Network Error</h4>
+                        <strong>Error:</strong> ${error.message}
+                        <strong>Note:</strong> Make sure you're logged in and the server is running.
+                    </div>
+                `;
+            } finally {
+                parseBtn.disabled = false;
+                parseBtn.textContent = 'Parse Constraint';
+            }
+        }
+
+        // Allow Enter key to trigger parsing
+        document.getElementById('constraintInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                parseConstraint();
+            }
+        });
+    </script>
+</body>
+</html> 

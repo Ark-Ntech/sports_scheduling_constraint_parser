@@ -1,60 +1,58 @@
-import { DataStreamWriter, tool } from 'ai';
-import { Session } from 'next-auth';
+import { type DataStreamWriter, tool } from 'ai';
+import type { User } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { getDocumentById, saveDocument } from '@/lib/db/queries';
-import { documentHandlersByArtifactKind } from '@/lib/artifacts/server';
+import type { Document } from '@/lib/types';
+
+// TODO: Implement these functions with Supabase
+async function getDocumentById(id: string): Promise<Document | null> {
+  console.log('getDocumentById called with:', id);
+  return null;
+}
+
+async function saveDocument(document: Document): Promise<void> {
+  console.log('saveDocument called with:', document);
+}
 
 interface UpdateDocumentProps {
-  session: Session;
+  session: { user: User | null };
   dataStream: DataStreamWriter;
 }
 
 export const updateDocument = ({ session, dataStream }: UpdateDocumentProps) =>
   tool({
-    description: 'Update a document with the given description.',
+    description: 'Update a document with new content',
     parameters: z.object({
-      id: z.string().describe('The ID of the document to update'),
-      description: z
-        .string()
-        .describe('The description of changes that need to be made'),
+      documentId: z.string(),
+      content: z.string(),
     }),
-    execute: async ({ id, description }) => {
-      const document = await getDocumentById({ id });
+    execute: async ({ documentId, content }) => {
+      if (!session.user) {
+        throw new Error('User must be authenticated to update documents');
+      }
+
+      const document = await getDocumentById(documentId);
 
       if (!document) {
-        return {
-          error: 'Document not found',
-        };
+        throw new Error('Document not found');
       }
+
+      const updatedDocument = {
+        ...document,
+        content,
+      };
+
+      await saveDocument(updatedDocument);
 
       dataStream.writeData({
-        type: 'clear',
-        content: document.title,
+        type: 'document-update',
+        content: JSON.stringify(updatedDocument),
       });
-
-      const documentHandler = documentHandlersByArtifactKind.find(
-        (documentHandlerByArtifactKind) =>
-          documentHandlerByArtifactKind.kind === document.kind,
-      );
-
-      if (!documentHandler) {
-        throw new Error(`No document handler found for kind: ${document.kind}`);
-      }
-
-      await documentHandler.onUpdateDocument({
-        document,
-        description,
-        dataStream,
-        session,
-      });
-
-      dataStream.writeData({ type: 'finish', content: '' });
 
       return {
-        id,
+        id: documentId,
         title: document.title,
-        kind: document.kind,
-        content: 'The document has been updated successfully.',
+        content,
+        message: 'Document updated successfully',
       };
     },
   });

@@ -1,14 +1,14 @@
 import { generateUUID } from '@/lib/utils';
-import { DataStreamWriter, tool } from 'ai';
+import { type DataStreamWriter, tool } from 'ai';
 import { z } from 'zod';
-import { Session } from 'next-auth';
+import type { User } from '@supabase/supabase-js';
 import {
   artifactKinds,
   documentHandlersByArtifactKind,
 } from '@/lib/artifacts/server';
 
 interface CreateDocumentProps {
-  session: Session;
+  session: { user: User | null };
   dataStream: DataStreamWriter;
 }
 

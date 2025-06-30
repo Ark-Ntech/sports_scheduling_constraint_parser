@@ -1,5 +1,3 @@
-import { generateDummyPassword } from './db/utils';
-
 export const isProductionEnvironment = process.env.NODE_ENV === 'production';
 export const isDevelopmentEnvironment = process.env.NODE_ENV === 'development';
 export const isTestEnvironment = Boolean(
@@ -9,5 +7,13 @@ export const isTestEnvironment = Boolean(
 );
 
 export const guestRegex = /^guest-\d+$/;
+
+// Simple dummy password generator since we removed the database utils
+function generateDummyPassword(): string {
+  return (
+    Math.random().toString(36).substring(2, 15) +
+    Math.random().toString(36).substring(2, 15)
+  );
+}
 
 export const DUMMY_PASSWORD = generateDummyPassword();

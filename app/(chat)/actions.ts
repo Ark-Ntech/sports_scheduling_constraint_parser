@@ -2,11 +2,6 @@
 
 import { generateText, type UIMessage } from 'ai';
 import { cookies } from 'next/headers';
-import {
-  deleteMessagesByChatIdAfterTimestamp,
-  getMessageById,
-  updateChatVisiblityById,
-} from '@/lib/db/queries';
 import type { VisibilityType } from '@/components/visibility-selector';
 import { myProvider } from '@/lib/ai/providers';
 
@@ -33,13 +28,10 @@ export async function generateTitleFromUserMessage({
   return title;
 }
 
+// TODO: Implement these functions with Supabase when we create the database schema
 export async function deleteTrailingMessages({ id }: { id: string }) {
-  const [message] = await getMessageById({ id });
-
-  await deleteMessagesByChatIdAfterTimestamp({
-    chatId: message.chatId,
-    timestamp: message.createdAt,
-  });
+  // Placeholder - will implement with Supabase
+  console.log('deleteTrailingMessages called with id:', id);
 }
 
 export async function updateChatVisibility({
@@ -49,5 +41,6 @@ export async function updateChatVisibility({
   chatId: string;
   visibility: VisibilityType;
 }) {
-  await updateChatVisiblityById({ chatId, visibility });
+  // Placeholder - will implement with Supabase
+  console.log('updateChatVisibility called with:', { chatId, visibility });
 }

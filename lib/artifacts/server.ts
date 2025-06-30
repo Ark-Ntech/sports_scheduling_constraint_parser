@@ -1,99 +1,75 @@
-import { codeDocumentHandler } from '@/artifacts/code/server';
-import { imageDocumentHandler } from '@/artifacts/image/server';
-import { sheetDocumentHandler } from '@/artifacts/sheet/server';
-import { textDocumentHandler } from '@/artifacts/text/server';
-import { ArtifactKind } from '@/components/artifact';
-import { DataStreamWriter } from 'ai';
-import { Document } from '../db/schema';
-import { saveDocument } from '../db/queries';
-import { Session } from 'next-auth';
+import type { DataStreamWriter } from 'ai';
+import type { Document } from '@/lib/types';
+import type { User } from '@supabase/supabase-js';
+
+// TODO: Implement with Supabase
+async function saveDocument(document: Document): Promise<void> {
+  console.log('saveDocument called with:', document);
+}
 
 export interface SaveDocumentProps {
   id: string;
   title: string;
-  kind: ArtifactKind;
   content: string;
-  userId: string;
+  kind: 'text' | 'code';
 }
 
-export interface CreateDocumentCallbackProps {
+export interface DocumentHandlerProps {
   id: string;
   title: string;
   dataStream: DataStreamWriter;
-  session: Session;
+  session: { user: User | null };
 }
 
-export interface UpdateDocumentCallbackProps {
+export interface UpdateDocumentProps extends DocumentHandlerProps {
   document: Document;
   description: string;
-  dataStream: DataStreamWriter;
-  session: Session;
 }
 
-export interface DocumentHandler<T = ArtifactKind> {
-  kind: T;
-  onCreateDocument: (args: CreateDocumentCallbackProps) => Promise<void>;
-  onUpdateDocument: (args: UpdateDocumentCallbackProps) => Promise<void>;
+export interface DocumentHandler {
+  kind: 'text' | 'code';
+  onCreateDocument: (props: DocumentHandlerProps) => Promise<void>;
+  onUpdateDocument: (props: UpdateDocumentProps) => Promise<void>;
 }
 
-export function createDocumentHandler<T extends ArtifactKind>(config: {
-  kind: T;
-  onCreateDocument: (params: CreateDocumentCallbackProps) => Promise<string>;
-  onUpdateDocument: (params: UpdateDocumentCallbackProps) => Promise<string>;
-}): DocumentHandler<T> {
-  return {
-    kind: config.kind,
-    onCreateDocument: async (args: CreateDocumentCallbackProps) => {
-      const draftContent = await config.onCreateDocument({
-        id: args.id,
-        title: args.title,
-        dataStream: args.dataStream,
-        session: args.session,
-      });
+// Placeholder document handlers
+const textDocumentHandler: DocumentHandler = {
+  kind: 'text',
+  onCreateDocument: async ({ id, title, dataStream }) => {
+    dataStream.writeData({
+      type: 'text-document',
+      content: `# ${title}\n\nThis is a new text document.`,
+    });
+  },
+  onUpdateDocument: async ({ document, description, dataStream }) => {
+    dataStream.writeData({
+      type: 'text-document',
+      content: `Updated: ${document.content}\n\nDescription: ${description}`,
+    });
+  },
+};
 
-      if (args.session?.user?.id) {
-        await saveDocument({
-          id: args.id,
-          title: args.title,
-          content: draftContent,
-          kind: config.kind,
-          userId: args.session.user.id,
-        });
-      }
+const codeDocumentHandler: DocumentHandler = {
+  kind: 'code',
+  onCreateDocument: async ({ id, title, dataStream }) => {
+    dataStream.writeData({
+      type: 'code-document',
+      content: `// ${title}\nconsole.log('Hello, world!');`,
+    });
+  },
+  onUpdateDocument: async ({ document, description, dataStream }) => {
+    dataStream.writeData({
+      type: 'code-document',
+      content: `// Updated code\n${document.content}\n// ${description}`,
+    });
+  },
+};
 
-      return;
-    },
-    onUpdateDocument: async (args: UpdateDocumentCallbackProps) => {
-      const draftContent = await config.onUpdateDocument({
-        document: args.document,
-        description: args.description,
-        dataStream: args.dataStream,
-        session: args.session,
-      });
+export const artifactKinds = ['text', 'code'] as const;
 
-      if (args.session?.user?.id) {
-        await saveDocument({
-          id: args.document.id,
-          title: args.document.title,
-          content: draftContent,
-          kind: config.kind,
-          userId: args.session.user.id,
-        });
-      }
-
-      return;
-    },
-  };
-}
-
-/*
- * Use this array to define the document handlers for each artifact kind.
- */
-export const documentHandlersByArtifactKind: Array<DocumentHandler> = [
+export const documentHandlersByArtifactKind: DocumentHandler[] = [
   textDocumentHandler,
   codeDocumentHandler,
-  imageDocumentHandler,
-  sheetDocumentHandler,
 ];
 
-export const artifactKinds = ['text', 'code', 'image', 'sheet'] as const;
+export { saveDocument };

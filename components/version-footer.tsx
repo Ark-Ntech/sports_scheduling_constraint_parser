@@ -6,11 +6,11 @@ import { useState } from 'react';
 import { useSWRConfig } from 'swr';
 import { useWindowSize } from 'usehooks-ts';
 
-import type { Document } from '@/lib/db/schema';
+import type { Document } from '@/lib/types';
 import { getDocumentTimestampByIndex } from '@/lib/utils';
 
 import { LoaderIcon } from './icons';
-import { Button } from './ui/button';
+import { Button } from '@/components/ui/button';
 import { useArtifact } from '@/hooks/use-artifact';
 
 interface VersionFooterProps {

@@ -1,8 +1,5 @@
-'use server';
+// Artifacts functionality is disabled for this constraint parser project
 
-import { getSuggestionsByDocumentId } from '@/lib/db/queries';
-
-export async function getSuggestions({ documentId }: { documentId: string }) {
-  const suggestions = await getSuggestionsByDocumentId({ documentId });
-  return suggestions ?? [];
+export async function getSuggestions() {
+  return [];
 }
