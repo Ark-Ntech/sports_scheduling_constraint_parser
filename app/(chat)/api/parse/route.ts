@@ -87,18 +87,47 @@ export async function POST(request: NextRequest) {
     const averageConfidence = totalConfidence / parsedResults.length;
     const savedCount = parsedResults.filter((result) => result.saved).length;
 
-    // Prepare enhanced response
+    // Prepare simplified response structure
     const response: any = {
       success: true,
       isMultiple: isMultipleConstraints,
       totalConstraints: parsedResults.length,
-      results: parsedResults,
+      results: parsedResults.map((result) => {
+        // Generate the exact output structure as specified in requirements
+        const constraintOutput = {
+          constraint_id:
+            result.constraintId ||
+            `constraint_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: mapToRequiredConstraintType(result.parsedData.type),
+          scope: extractScope(result.parsedData),
+          parameters: extractParameters(result.parsedData),
+          priority: determinePriority(result.rawText),
+          confidence: result.parsedData.confidence,
+          // Include entities for UI display
+          entities: result.parsedData.entities || [],
+          conditions: result.parsedData.conditions || [],
+          llmJudge: result.parsedData.llmJudge,
+          // Additional metadata
+          temporal_info: result.parsedData.temporal,
+          raw_text: result.rawText,
+          parsing_method: hfParser.isConfigured
+            ? 'huggingface_ml'
+            : 'rule_based',
+        };
+
+        return {
+          ...result,
+          standardOutput: constraintOutput,
+        };
+      }),
       statistics: {
         totalConstraints: parsedResults.length,
         averageConfidence,
         savedCount,
         parsingMethod: hfParser.isConfigured ? 'huggingface' : 'rule-based',
-        constraintTypes: parsedResults.map((r) => r.parsedData.type),
+        constraintTypes: parsedResults.map((r) =>
+          mapToRequiredConstraintType(r.parsedData.type),
+        ),
         highConfidenceCount: parsedResults.filter(
           (r) => r.parsedData.confidence >= 0.8,
         ).length,
@@ -114,6 +143,9 @@ export async function POST(request: NextRequest) {
       response.parsingMethod = hfParser.isConfigured
         ? 'huggingface'
         : 'rule-based';
+
+      // Include the exact required output structure
+      response.standardOutput = response.results[0]?.standardOutput;
 
       // Include LLM judge analysis if available
       if (singleResult.parsedData.llmJudge) {
@@ -156,53 +188,69 @@ export async function POST(request: NextRequest) {
  * Handles various separators and conjunctions
  */
 function splitMultipleConstraints(text: string): string[] {
-  // Common separators for multiple constraints
-  const separators = [
-    /\s+and\s+(?=\w)/gi, // "and" followed by a word (not "AND" in team names)
-    /\s*;\s*/g, // semicolon
-    /\s*\.\s*(?=[A-Z])/g, // period followed by capital letter (new sentence)
-    /\s*,\s*(?=(?:team|no|maximum|minimum|at\s+least|at\s+most|field|court|venue)\s)/gi, // comma before constraint keywords
-  ];
+  // First, try line breaks (most common separator)
+  let constraints = text.split(/\n\s*\n|\r\n\s*\r\n/); // Double line breaks
 
-  let constraints = [text];
+  if (constraints.length === 1) {
+    // Try single line breaks if no double breaks found
+    constraints = text.split(/\n|\r\n/);
+  }
 
-  // Apply each separator
-  for (const separator of separators) {
-    const newConstraints: string[] = [];
-    for (const constraint of constraints) {
-      const split = constraint.split(separator);
-      if (split.length > 1) {
-        // Only split if we get meaningful constraints (not just splitting team names)
-        const validSplits = split.filter((part) => {
-          const trimmed = part.trim();
-          return (
-            trimmed.length > 10 && // Must be substantial
-            (trimmed.toLowerCase().includes('team') ||
-              trimmed.toLowerCase().includes('field') ||
-              trimmed.toLowerCase().includes('game') ||
-              trimmed.toLowerCase().includes('no more') ||
-              trimmed.toLowerCase().includes('maximum') ||
-              trimmed.toLowerCase().includes('cannot') ||
-              trimmed.toLowerCase().includes('must'))
-          );
-        });
+  if (constraints.length === 1) {
+    // If still one constraint, try other separators
+    const separators = [
+      /\s+and\s+(?=(?:team|no|maximum|minimum|at\s+least|at\s+most|field|court|venue|eagles|games|must|cannot)\s)/gi, // "and" followed by constraint keywords
+      /\s*;\s*/g, // semicolon
+      /\s*\.\s*(?=[A-Z])/g, // period followed by capital letter (new sentence)
+      /\s*,\s*(?=(?:team|no|maximum|minimum|at\s+least|at\s+most|field|court|venue|eagles|games|must|cannot)\s)/gi, // comma before constraint keywords
+    ];
 
-        if (validSplits.length > 1) {
-          newConstraints.push(...validSplits);
+    // Apply each separator
+    for (const separator of separators) {
+      const newConstraints: string[] = [];
+      for (const constraint of constraints) {
+        const split = constraint.split(separator);
+        if (split.length > 1) {
+          // Only split if we get meaningful constraints
+          const validSplits = split.filter((part) => {
+            const trimmed = part.trim();
+            return (
+              trimmed.length > 15 && // Must be substantial (increased from 10)
+              (trimmed.toLowerCase().includes('team') ||
+                trimmed.toLowerCase().includes('field') ||
+                trimmed.toLowerCase().includes('game') ||
+                trimmed.toLowerCase().includes('no more') ||
+                trimmed.toLowerCase().includes('at least') ||
+                trimmed.toLowerCase().includes('maximum') ||
+                trimmed.toLowerCase().includes('minimum') ||
+                trimmed.toLowerCase().includes('cannot') ||
+                trimmed.toLowerCase().includes('must') ||
+                trimmed.toLowerCase().includes('need') ||
+                trimmed.toLowerCase().includes('between') ||
+                trimmed.toLowerCase().includes('home') ||
+                trimmed.toLowerCase().includes('venue') ||
+                trimmed.toLowerCase().includes('court') ||
+                trimmed.toLowerCase().includes('eagles'))
+            );
+          });
+
+          if (validSplits.length > 1) {
+            newConstraints.push(...validSplits);
+          } else {
+            newConstraints.push(constraint);
+          }
         } else {
           newConstraints.push(constraint);
         }
-      } else {
-        newConstraints.push(constraint);
       }
+      constraints = newConstraints;
     }
-    constraints = newConstraints;
   }
 
   // Clean up and filter results
-  return constraints
+  const finalConstraints = constraints
     .map((constraint) => constraint.trim())
-    .filter((constraint) => constraint.length > 5) // Filter out very short fragments
+    .filter((constraint) => constraint.length > 10) // Filter out very short fragments
     .filter((constraint) => {
       // Filter out fragments that don't look like complete constraints
       const lower = constraint.toLowerCase();
@@ -211,14 +259,30 @@ function splitMultipleConstraints(text: string): string[] {
         lower.includes('field') ||
         lower.includes('game') ||
         lower.includes('no more') ||
+        lower.includes('at least') ||
         lower.includes('maximum') ||
+        lower.includes('minimum') ||
         lower.includes('cannot') ||
         lower.includes('must') ||
-        lower.includes('at least') ||
+        lower.includes('need') ||
+        lower.includes('between') ||
+        lower.includes('home') ||
+        lower.includes('venue') ||
+        lower.includes('court') ||
         lower.includes('before') ||
-        lower.includes('after')
+        lower.includes('after') ||
+        lower.includes('eagles') ||
+        lower.includes('played')
       );
     });
+
+  // Add debugging
+  console.log(
+    `🔍 Split constraints: Found ${finalConstraints.length} constraints from input:`,
+    finalConstraints,
+  );
+
+  return finalConstraints;
 }
 
 function simpleConstraintParser(
@@ -594,38 +658,221 @@ function extractRestConditions(text: string): Condition[] {
 }
 
 function calculateConfidence(text: string, parsedResult: any): number {
-  let score = 0.0;
+  let confidence = 0.5; // Base confidence
 
-  // Base score for successful type classification
-  if (parsedResult.type !== 'unknown') {
-    score += 0.3;
+  // Boost for entity recognition
+  if (parsedResult.entities && parsedResult.entities.length > 0) {
+    confidence += 0.2;
   }
 
-  // Score for entities found
-  const entityCount = parsedResult.entities.length;
-  if (entityCount > 0) {
-    score += Math.min(0.3, entityCount * 0.1);
+  // Boost for condition extraction
+  if (parsedResult.conditions && parsedResult.conditions.length > 0) {
+    confidence += 0.2;
   }
 
-  // Score for conditions found
-  const conditionCount = parsedResult.conditions.length;
-  if (conditionCount > 0) {
-    score += Math.min(0.2, conditionCount * 0.1);
-  }
-
-  // Score for specific constraint data
-  const constraintData = parsedResult[parsedResult.type];
+  // Boost for specific keywords
+  const textLower = text.toLowerCase();
   if (
-    constraintData &&
-    Object.values(constraintData).some(
-      (v) =>
-        v !== null &&
-        v !== undefined &&
-        (Array.isArray(v) ? v.length > 0 : true),
-    )
+    textLower.includes('cannot') ||
+    textLower.includes('must') ||
+    textLower.includes('no more than') ||
+    textLower.includes('at least')
   ) {
-    score += 0.2;
+    confidence += 0.1;
   }
 
-  return Math.min(1.0, score);
+  return Math.min(confidence, 1.0);
+}
+
+/**
+ * Map internal constraint types to the required constraint type categories
+ */
+function mapToRequiredConstraintType(internalType: string): string {
+  const typeMapping: Record<string, string> = {
+    temporal: 'temporal_restriction',
+    capacity: 'capacity_limitation',
+    location: 'venue_constraint',
+    rest: 'rest_period_requirement',
+    preference: 'optimization_preference',
+    prohibition: 'hard_prohibition',
+    assignment: 'resource_assignment',
+  };
+
+  return typeMapping[internalType] || 'general_constraint';
+}
+
+/**
+ * Extract scope (affected teams/games) from parsed data
+ */
+function extractScope(parsedData: any): string[] {
+  const scope: string[] = [];
+
+  if (parsedData.entities) {
+    // Extract team names
+    const teams = parsedData.entities
+      .filter((entity: any) => entity.type === 'team')
+      .map((entity: any) => entity.value);
+    scope.push(...teams);
+
+    // If no specific teams mentioned, check for "all teams"
+    if (teams.length === 0 && parsedData.conditions) {
+      const hasAllTeams = parsedData.conditions.some((condition: any) =>
+        condition.value?.toString().toLowerCase().includes('all'),
+      );
+      if (hasAllTeams) {
+        scope.push('all_teams');
+      }
+    }
+  }
+
+  return scope;
+}
+
+/**
+ * Extract parameters (specific values and conditions) from parsed data
+ */
+function extractParameters(parsedData: any): Record<string, any> {
+  const parameters: Record<string, any> = {};
+
+  switch (parsedData.type) {
+    case 'temporal':
+      if (parsedData.temporal) {
+        if (parsedData.temporal.days_of_week?.length > 0) {
+          parameters.restricted_days = parsedData.temporal.days_of_week;
+          parameters.restriction_type = 'complete_ban';
+        }
+        if (parsedData.temporal.excluded_dates?.length > 0) {
+          parameters.excluded_dates = parsedData.temporal.excluded_dates;
+        }
+        if (parsedData.temporal.time_ranges?.length > 0) {
+          parameters.time_ranges = parsedData.temporal.time_ranges;
+        }
+      }
+      break;
+
+    case 'capacity':
+      if (parsedData.capacity) {
+        if (parsedData.capacity.max_concurrent) {
+          parameters.max_concurrent_games = parsedData.capacity.max_concurrent;
+        }
+        if (parsedData.capacity.max_per_day) {
+          parameters.max_games_per_day = parsedData.capacity.max_per_day;
+        }
+        if (parsedData.capacity.max_per_week) {
+          parameters.max_games_per_week = parsedData.capacity.max_per_week;
+        }
+        parameters.resource_type = parsedData.capacity.resource || 'games';
+      }
+      break;
+
+    case 'rest':
+      if (parsedData.rest) {
+        if (parsedData.rest.min_days) {
+          parameters.minimum_rest_days = parsedData.rest.min_days;
+        }
+        if (parsedData.rest.min_hours) {
+          parameters.minimum_rest_hours = parsedData.rest.min_hours;
+        }
+        parameters.applies_to = parsedData.rest.between_games
+          ? 'between_games'
+          : 'general';
+      }
+      break;
+
+    case 'location':
+      if (parsedData.location) {
+        if (parsedData.location.required_venue) {
+          parameters.required_venue = parsedData.location.required_venue;
+        }
+        if (parsedData.location.excluded_venues?.length > 0) {
+          parameters.excluded_venues = parsedData.location.excluded_venues;
+        }
+        if (parsedData.location.home_venue_required !== undefined) {
+          parameters.home_venue_required =
+            parsedData.location.home_venue_required;
+        }
+      }
+      break;
+
+    case 'preference':
+      if (parsedData.preference) {
+        parameters.optimization_goal =
+          parsedData.preference.optimization_goal || 'optimize';
+        parameters.weight = parsedData.preference.weight || 1.0;
+        parameters.description = parsedData.preference.description;
+      }
+      break;
+  }
+
+  // Add extracted numbers and conditions
+  if (parsedData.entities) {
+    const numbers = parsedData.entities
+      .filter((entity: any) => entity.type === 'number')
+      .map((entity: any) => Number.parseInt(entity.value, 10));
+    if (numbers.length > 0) {
+      parameters.numeric_values = numbers;
+    }
+  }
+
+  if (parsedData.conditions && parsedData.conditions.length > 0) {
+    parameters.conditions = parsedData.conditions.map((condition: any) => ({
+      operator: condition.operator,
+      value: condition.value,
+      unit: condition.unit || 'count',
+    }));
+  }
+
+  return parameters;
+}
+
+/**
+ * Determine priority level (hard vs soft constraint) based on text analysis
+ */
+function determinePriority(text: string): 'hard' | 'soft' {
+  const textLower = text.toLowerCase();
+
+  // Hard constraint indicators
+  const hardKeywords = [
+    'cannot',
+    'must not',
+    'never',
+    'prohibited',
+    'forbidden',
+    'must',
+    'required',
+    'mandatory',
+    'essential',
+    'critical',
+  ];
+
+  // Soft constraint indicators
+  const softKeywords = [
+    'prefer',
+    'should',
+    'minimize',
+    'maximize',
+    'optimize',
+    'try to',
+    'attempt to',
+    'ideally',
+    'if possible',
+  ];
+
+  const hasHardKeywords = hardKeywords.some((keyword) =>
+    textLower.includes(keyword),
+  );
+  const hasSoftKeywords = softKeywords.some((keyword) =>
+    textLower.includes(keyword),
+  );
+
+  if (hasHardKeywords) {
+    return 'hard';
+  } else if (hasSoftKeywords) {
+    return 'soft';
+  } else {
+    // Default to hard for definitive statements, soft for vague ones
+    return textLower.includes('no more than') || textLower.includes('at least')
+      ? 'hard'
+      : 'soft';
+  }
 }

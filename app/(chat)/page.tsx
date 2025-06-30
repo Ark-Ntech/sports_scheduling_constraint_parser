@@ -66,7 +66,7 @@ export default function Page() {
     };
 
     loadUserData();
-  }, [router, supabase.auth]);
+  }, [router]);
 
   const handleConstraintSetsChange = (newSets: ConstraintSet[]) => {
     setConstraintSets(newSets);
@@ -137,6 +137,45 @@ export default function Page() {
             Transform natural language scheduling rules into structured
             constraints
           </p>
+
+          {/* Tab Navigation */}
+          <div className="flex justify-center mt-6">
+            <div className="flex bg-white rounded-lg shadow-sm border border-gray-200 p-1">
+              <button
+                type="button"
+                onClick={() => navigateToTab('parser')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === 'parser'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                📝 Parser
+              </button>
+              <button
+                type="button"
+                onClick={() => navigateToTab('manager')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === 'manager'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                🏗️ Constraint Sets
+              </button>
+              <button
+                type="button"
+                onClick={() => navigateToTab('calendar')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === 'calendar'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                📅 Calendar
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Integration Panel */}

@@ -3843,12 +3843,13 @@ export function EnhancedConstraintSetManager({
                           />
                         </svg>
                       </button>
-                      {onConstraintSetSelected && (
+                      {onConstraintSetSelected && onNavigateToCalendar && (
                         <button
                           type="button"
-                          onClick={() =>
-                            onConstraintSetSelected(set as ConstraintSet)
-                          }
+                          onClick={() => {
+                            onConstraintSetSelected(set as ConstraintSet);
+                            onNavigateToCalendar();
+                          }}
                           className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-md"
                           title="Use in Calendar"
                         >

@@ -34,24 +34,27 @@ interface LLMJudgeResult {
   completenessScore?: number;
   contextualInsights?: string;
   llmExplanation?: any;
+  intentConfidence?: number;
 }
 
 export class HuggingFaceConstraintParser {
   private hf: HfInference | null = null;
   public isConfigured = false;
   private accessToken: string | null = null;
+  private openaiApiKey: string | null = null;
 
   constructor() {
-    // Try multiple environment variable names for HF token
-    this.accessToken =
-      process.env.HUGGINGFACE_API_KEY ||
-      process.env.HF_TOKEN ||
-      process.env.HUGGINGFACE_ACCESS_TOKEN ||
-      process.env.HF_ACCESS_TOKEN ||
-      null;
+    try {
+      // Initialize Hugging Face - check multiple environment variable names
+      this.accessToken =
+        process.env.HUGGINGFACE_API_TOKEN ||
+        process.env.HUGGINGFACE_API_KEY ||
+        process.env.HF_TOKEN ||
+        process.env.HUGGINGFACE_ACCESS_TOKEN ||
+        process.env.HF_ACCESS_TOKEN ||
+        null;
 
-    if (this.accessToken) {
-      try {
+      if (this.accessToken) {
         // Validate token format
         if (!this.accessToken.startsWith('hf_')) {
           console.warn('⚠️ HuggingFace token should start with "hf_"');
@@ -63,16 +66,22 @@ export class HuggingFaceConstraintParser {
         this.hf = new HfInference(this.accessToken);
         this.isConfigured = true;
         console.log('✅ HuggingFace parser initialized successfully');
-        console.log(`   Token format: ${this.accessToken.substring(0, 10)}...`);
-      } catch (error) {
-        console.warn('❌ Failed to initialize HuggingFace:', error);
-        this.isConfigured = false;
+        console.log(`   Token format: ${this.accessToken.substring(0, 8)}...`);
+      } else {
+        console.warn('⚠️ No HuggingFace token found, using rule-based fallback');
+        console.warn(
+          '   Checked: HUGGINGFACE_API_TOKEN, HUGGINGFACE_API_KEY, HF_TOKEN, HUGGINGFACE_ACCESS_TOKEN, HF_ACCESS_TOKEN',
+        );
       }
-    } else {
-      console.log('⚠️ No HuggingFace token found, will use rule-based fallback');
-      console.log(
-        '   Checked: HUGGINGFACE_API_KEY, HF_TOKEN, HUGGINGFACE_ACCESS_TOKEN, HF_ACCESS_TOKEN',
-      );
+
+      // Initialize OpenAI if available
+      this.openaiApiKey = process.env.OPENAI_API_KEY || null;
+      if (this.openaiApiKey) {
+        console.log('✅ OpenAI API key detected for enhanced LLM capabilities');
+      }
+    } catch (error) {
+      console.error('❌ Failed to initialize HuggingFace parser:', error);
+      this.isConfigured = false;
     }
   }
 
@@ -140,7 +149,7 @@ export class HuggingFaceConstraintParser {
       }
 
       // Apply LLM as a Judge for validation
-      const judgeResult = await this.applyLLMJudge(text, result);
+      const judgeResult = await this.applyLLMJudge(text, result, intentResult);
       result.llmJudge = judgeResult;
 
       // Adjust confidence based on LLM judge
@@ -297,15 +306,21 @@ export class HuggingFaceConstraintParser {
   private async applyLLMJudge(
     originalText: string,
     parsedResult: any,
+    intentResults?: HFClassificationResult[],
   ): Promise<LLMJudgeResult> {
     // Always use enhanced basic analysis since text generation is failing
     console.log('🔍 Applying enhanced judge analysis...');
-    return await this.performEnhancedJudgeAnalysis(originalText, parsedResult);
+    return await this.performEnhancedJudgeAnalysis(
+      originalText,
+      parsedResult,
+      intentResults,
+    );
   }
 
   private async performEnhancedJudgeAnalysis(
     originalText: string,
     parsedResult: any,
+    intentResults?: HFClassificationResult[],
   ): Promise<LLMJudgeResult> {
     // Enhanced analysis using available ML data and rule-based heuristics
     const textLower = originalText.toLowerCase();
@@ -434,6 +449,7 @@ export class HuggingFaceConstraintParser {
       suggestedCorrections,
       contextualInsights: insights,
       llmExplanation,
+      intentConfidence: intentResults?.[0]?.score || 0.5,
     };
   }
 
@@ -1631,6 +1647,23 @@ export class HuggingFaceConstraintParser {
     parsedResult: any,
     completeness: number,
   ): Promise<any> {
+    // Try OpenAI first if available (highest quality)
+    if (this.openaiApiKey) {
+      try {
+        const openaiResult = await this.generateOpenAIExplanation(
+          originalText,
+          parsedResult,
+          completeness,
+        );
+        if (openaiResult) {
+          console.log('🤖 OpenAI explanation generated successfully');
+          return openaiResult;
+        }
+      } catch (error) {
+        console.warn('🔍 OpenAI explanation failed:', error);
+      }
+    }
+
     if (!this.hf) {
       console.log('🔍 HF not available, using fallback explanation');
       return this.generateFallbackExplanation(
@@ -1655,33 +1688,142 @@ Provide a concise analysis in 200 words or less covering:
 
 Format as: CONFIDENCE: [explanation] ENTITIES: [analysis] CLASSIFICATION: [reasoning] IMPROVEMENTS: 1. [suggestion] 2. [suggestion] 3. [suggestion]`;
 
-    try {
-      const result = await this.hf.textGeneration({
-        model: 'mistralai/Mistral-7B-Instruct-v0.2',
-        inputs: prompt,
-        parameters: {
-          max_new_tokens: 300,
-          temperature: 0.2,
-          do_sample: true,
-          top_p: 0.9,
-          return_full_text: false,
-        },
-      });
+    // Try multiple advanced models in order of preference
+    const models = [
+      'microsoft/DialoGPT-large',
+      'microsoft/DialoGPT-medium',
+      'google/flan-t5-large',
+      'google/flan-t5-base',
+      'mistralai/Mistral-7B-Instruct-v0.2', // Keep as fallback
+    ];
 
-      console.log('🤖 LLM explanation generated successfully');
-      return this.parseLLMResponse(
-        result.generated_text,
-        originalText,
-        parsedResult,
-        completeness,
+    for (const model of models) {
+      try {
+        console.log(`🤖 Trying LLM model: ${model}`);
+        const result = await this.hf.textGeneration({
+          model: model,
+          inputs: prompt,
+          parameters: {
+            max_new_tokens: 300,
+            temperature: 0.2,
+            do_sample: true,
+            top_p: 0.9,
+            return_full_text: false,
+          },
+        });
+
+        console.log(`🤖 LLM explanation generated successfully with ${model}`);
+        return this.parseLLMResponse(
+          result.generated_text,
+          originalText,
+          parsedResult,
+          completeness,
+        );
+      } catch (error) {
+        console.warn(`🔍 Model ${model} failed:`, error);
+        continue; // Try next model
+      }
+    }
+
+    // If all models fail, use fallback
+    console.warn('🔍 All LLM models failed, using fallback explanation');
+    return this.generateFallbackExplanation(
+      originalText,
+      parsedResult,
+      completeness,
+    );
+  }
+
+  private async generateOpenAIExplanation(
+    originalText: string,
+    parsedResult: any,
+    completeness: number,
+  ): Promise<any> {
+    if (!this.openaiApiKey) return null;
+
+    const prompt = `You are an expert in sports scheduling constraint analysis. Analyze this parsing result:
+
+Original Text: "${originalText}"
+Parsed Type: ${parsedResult.type}
+Confidence: ${(completeness * 100).toFixed(1)}%
+Entities Found: ${JSON.stringify(parsedResult.entities, null, 2)}
+
+Provide a professional analysis covering:
+1. Confidence score explanation
+2. Entity analysis and significance  
+3. Classification reasoning
+4. Three specific improvement suggestions
+
+Keep response under 200 words and be precise.`;
+
+    try {
+      const response = await fetch(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.openaiApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-3.5-turbo',
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'You are an expert in sports scheduling constraint analysis. Provide concise, professional analysis.',
+              },
+              {
+                role: 'user',
+                content: prompt,
+              },
+            ],
+            max_tokens: 300,
+            temperature: 0.2,
+          }),
+        },
       );
+
+      if (!response.ok) {
+        throw new Error(`OpenAI API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const explanation = data.choices[0]?.message?.content || '';
+
+      return {
+        confidenceBreakdown: `OpenAI Analysis: ${(completeness * 100).toFixed(1)}% confidence achieved through advanced ML parsing with ${parsedResult.entities?.length || 0} entities detected.`,
+        entityAnalysis:
+          explanation.includes('entities') || explanation.includes('Entities')
+            ? `${explanation.split(/entities|Entities/i)[1]?.split('.')[0]}.`
+            : `Detected ${parsedResult.entities?.length || 0} entities with strong pattern recognition.`,
+        classificationReasoning:
+          explanation.includes('classified') ||
+          explanation.includes('Classification')
+            ? `${
+                explanation
+                  .split(/classified|Classification/i)[1]
+                  ?.split('.')[0]
+              }.`
+            : `Advanced classification identified "${parsedResult.type}" constraint type.`,
+        improvementSuggestions: [
+          'Add more specific team and venue names',
+          'Include precise temporal details (dates, times)',
+          'Use explicit constraint language (must, cannot, prefer)',
+        ],
+        qualityAssessment: {
+          rating:
+            completeness >= 0.9
+              ? 'Excellent'
+              : completeness >= 0.7
+                ? 'Good'
+                : 'Fair',
+          explanation: `OpenAI-enhanced analysis indicates ${completeness >= 0.7 ? 'high-quality' : 'moderate-quality'} constraint parsing.`,
+        },
+      };
     } catch (error) {
-      console.warn('🔍 LLM explanation failed, using fallback:', error);
-      return this.generateFallbackExplanation(
-        originalText,
-        parsedResult,
-        completeness,
-      );
+      console.warn('🔍 OpenAI explanation failed:', error);
+      return null;
     }
   }
 

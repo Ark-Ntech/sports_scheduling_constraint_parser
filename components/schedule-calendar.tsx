@@ -146,7 +146,7 @@ export function ScheduleCalendar({
     if (constraintSets.length > 0 && validationEnabled) {
       loadConstraintDetails();
     }
-  }, [constraintSets, validationEnabled]);
+  }, [constraintSets.length, validationEnabled]); // Use length instead of the array itself to prevent infinite re-renders
 
   const loadHierarchyData = async () => {
     try {

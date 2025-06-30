@@ -582,8 +582,7 @@ We follow [Semantic Versioning](https://semver.org/):
 
 For urgent issues or security concerns, contact maintainers directly:
 
-- Email: maintainers@example.com
-- GitHub: @maintainer-username
+- GitHub: @Ark-Ntech
 
 ## 🙏 Recognition
 

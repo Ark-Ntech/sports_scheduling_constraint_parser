@@ -190,3 +190,186 @@ The API now includes parsing method information:
 ---
 
 The system is now using genuine machine learning models for constraint parsing while maintaining compatibility and reliability!
+
+# Enhanced LLM Setup Guide
+
+This document explains how to set up advanced language model capabilities for the Sports Scheduling Constraint Parser, including both Hugging Face and OpenAI integration.
+
+## Current LLM Capabilities
+
+The system now supports multiple LLM providers in order of preference:
+
+1. **OpenAI GPT-3.5-turbo** (highest quality, requires API key)
+2. **Hugging Face Models** (multiple fallbacks)
+3. **Rule-based fallback** (always available)
+
+## OpenAI Setup (Recommended)
+
+### Step 1: Get OpenAI API Key
+
+1. Visit [OpenAI Platform](https://platform.openai.com/)
+2. Sign up or log in to your account
+3. Navigate to API Keys section
+4. Create a new API key
+5. Copy the key (starts with `sk-`)
+
+### Step 2: Add to Environment
+
+Add your OpenAI API key to your `.env.local` file:
+
+```bash
+# OpenAI Configuration (for enhanced LLM explanations)
+OPENAI_API_KEY=sk-your-actual-api-key-here
+```
+
+### Step 3: Restart Development Server
+
+```bash
+npm run dev
+```
+
+You should see this message in the console:
+
+```
+✅ OpenAI API key detected for enhanced LLM capabilities
+```
+
+## Hugging Face Setup (Alternative/Fallback)
+
+### Step 1: Create Hugging Face Account
+
+1. Visit [Hugging Face](https://huggingface.co/)
+2. Sign up for a free account
+3. Go to Settings → Access Tokens
+4. Create a new token with "Read" permissions
+5. Copy the token (starts with `hf_`)
+
+### Step 2: Add to Environment Variables
+
+Add your Hugging Face token to your `.env.local` file:
+
+```bash
+# Hugging Face Configuration
+HUGGINGFACE_API_TOKEN=hf_your-huggingface-token-here
+```
+
+### Step 3: Restart Development Server
+
+```bash
+npm run dev
+```
+
+You should see this message in the console:
+
+```
+✅ HuggingFace parser initialized successfully
+   Token format: hf_xxxxxxx...
+```
+
+## LLM Model Hierarchy
+
+The system tries models in this order:
+
+### OpenAI Models (If API key provided)
+
+- `gpt-3.5-turbo` - Advanced reasoning and explanation
+
+### Hugging Face Models (If token provided)
+
+1. `microsoft/DialoGPT-large` - Conversational AI
+2. `microsoft/DialoGPT-medium` - Lighter conversational model
+3. `google/flan-t5-large` - Instruction-following model
+4. `google/flan-t5-base` - Base instruction model
+5. `mistralai/Mistral-7B-Instruct-v0.2` - Instruction-tuned model
+
+### Fallback System
+
+- Rule-based explanations (always available)
+- No external dependencies required
+
+## Testing Your Setup
+
+### Test OpenAI Integration
+
+1. Add a constraint in the parser: `"Lakers cannot play on Sundays"`
+2. Check the console for: `🤖 OpenAI explanation generated successfully`
+3. Look for enhanced explanation quality in the confidence breakdown
+
+### Test Hugging Face Integration
+
+1. If OpenAI fails, you should see attempts at different HF models
+2. Console will show: `🤖 Trying LLM model: microsoft/DialoGPT-large`
+3. Successful parsing will show: `🤖 LLM explanation generated successfully with [model]`
+
+## Troubleshooting
+
+### OpenAI Issues
+
+- **401 Unauthorized**: Check your API key is correct and active
+- **429 Rate Limited**: You've exceeded your OpenAI usage limits
+- **Network errors**: Check your internet connection
+
+### Hugging Face Issues
+
+- **401 Unauthorized**: Verify your HF token is correct
+- **Model loading errors**: Try again, models may be temporarily unavailable
+- **Timeout errors**: Some models may be slow to respond
+
+### General Issues
+
+- **No LLM available**: The system will use rule-based explanations
+- **Partial failures**: System gracefully degrades to simpler models
+- **All models fail**: Fallback explanations are always generated
+
+## Environment File Example
+
+Your complete `.env.local` should look like:
+
+```bash
+# Database Configuration
+DATABASE_URL="your-supabase-connection-string"
+NEXT_PUBLIC_SUPABASE_URL="your-supabase-url"
+NEXT_PUBLIC_SUPABASE_ANON_KEY="your-supabase-anon-key"
+
+# Enhanced LLM Configuration
+OPENAI_API_KEY=sk-your-openai-key-here
+HUGGINGFACE_API_TOKEN=hf_your-huggingface-token-here
+```
+
+## Benefits of Enhanced LLM Integration
+
+### With OpenAI
+
+- **Superior explanations**: More natural, detailed analysis
+- **Better reasoning**: Advanced understanding of constraint parsing
+- **Consistent quality**: Reliable, professional-grade responses
+
+### With Hugging Face
+
+- **Multiple fallbacks**: Redundancy ensures availability
+- **Specialized models**: Different models for different use cases
+- **Free tier**: No usage costs for basic functionality
+
+### Rule-based Fallback
+
+- **Always available**: No external dependencies
+- **Fast responses**: Instant explanations
+- **Reliable**: Deterministic, predictable results
+
+## Performance Optimization
+
+The system is optimized for:
+
+- **Fast responses**: OpenAI first, then HF models
+- **Graceful degradation**: Falls back to simpler models
+- **Error handling**: Continues working even if all LLMs fail
+- **Cost efficiency**: Uses free HF models when possible
+
+## Next Steps
+
+1. **Set up OpenAI** for best results
+2. **Add HF token** as backup
+3. **Test with complex constraints** to see improved explanations
+4. **Monitor console logs** to verify which models are being used
+
+The enhanced LLM integration provides significantly better constraint analysis and explanations while maintaining backward compatibility with the existing rule-based system.

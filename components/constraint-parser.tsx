@@ -250,7 +250,7 @@ export function ConstraintParser({
         onConstraintsParsed(constraints);
       }
     }
-  }, [parsedData, multipleResults, onConstraintsParsed]);
+  }, [parsedData, multipleResults]);
 
   // Save handlers
   const handleSaveToExistingSet = async () => {
@@ -438,10 +438,13 @@ export function ConstraintParser({
           setMultipleResults(result.results);
           setConfidenceScore(result.statistics.averageConfidence);
         } else {
-          // Single constraint (backward compatibility)
-          console.log('Setting parsed data:', result.data);
-          setParsedData(result.data);
-          setConfidenceScore(result.data.confidence);
+          // Single constraint - use standardized output format
+          console.log(
+            'Setting parsed data:',
+            result.standardOutput || result.data,
+          );
+          setParsedData(result.standardOutput || result.data);
+          setConfidenceScore((result.standardOutput || result.data).confidence);
         }
       } else {
         console.log('Parse failed:', result.error);

@@ -86,29 +86,144 @@ export function ConfidenceMethodology({
 
   // Calculate transparent scoring breakdown
   const calculateScoringBreakdown = () => {
-    // Intent Classification (40%)
-    const intentScore = parsedResult.llmJudge?.intentScore || 0.35; // From logs
+    // Intent Classification (40%) - Get actual value from backend
+    // Check multiple possible locations for the intent confidence score
+    let intentScore = 0.57; // fallback
+
+    // Try to get the actual intent score from the backend response
+    if (parsedResult.llmJudge?.intentConfidence) {
+      intentScore = parsedResult.llmJudge.intentConfidence;
+    } else if (parsedResult.intentConfidence) {
+      intentScore = parsedResult.intentConfidence;
+    } else if (parsedResult.llmJudge?.reasoning) {
+      // Try to extract from the reasoning text if available
+      const reasoningMatch =
+        parsedResult.llmJudge.reasoning.match(/intent.*?(\d+\.?\d*)/i);
+      if (reasoningMatch) {
+        intentScore = Number.parseFloat(reasoningMatch[1]);
+        if (intentScore > 1) intentScore = intentScore / 100; // Convert percentage to decimal
+      }
+    }
+
+    console.log('🔍 Frontend detected intent score:', intentScore);
     const intentWeighted = intentScore * 0.4;
 
-    // Entity Completeness (35%) - based on constraint type
+    // Entity Completeness (35%) - Calculate exactly as backend does
     let entityCompleteness = 0;
+
+    // Base score from entity count (up to 0.6)
+    const entityCount = parsedResult.entities?.length || 0;
+    const baseScore = Math.min(entityCount * 0.15, 0.6);
+
+    // Type-specific scoring (matches backend logic exactly)
+    let typeSpecificScore = 0;
     if (parsedResult.type === 'capacity') {
-      entityCompleteness =
-        (hasCapacityIndicator ? 0.35 : 0) +
-        (hasNumber ? 0.25 : 0) +
-        (hasVenue ? 0.2 : 0) +
-        (hasTimePeriod ? 0.15 : 0);
+      // Capacity constraints: venue + number + capacity_indicator are critical
+      if (hasCapacityIndicator) typeSpecificScore += 0.35; // Very important
+      if (hasNumber) typeSpecificScore += 0.25; // Critical for limits
+      if (hasVenue) typeSpecificScore += 0.2; // Important for context
+      if (hasTimePeriod) typeSpecificScore += 0.15; // Useful for frequency
     } else if (parsedResult.type === 'temporal') {
-      entityCompleteness =
-        (hasTime ? 0.4 : 0) +
-        (hasTeam ? 0.3 : 0) +
-        (hasVenue ? 0.15 : 0) +
-        (hasNumber ? 0.1 : 0);
+      // Temporal constraints: team + time/day are critical
+      if (hasTeam) typeSpecificScore += 0.3;
+      if (hasTime) typeSpecificScore += 0.4; // Most critical
+      if (hasVenue) typeSpecificScore += 0.15;
+      if (hasNumber) typeSpecificScore += 0.1;
+    } else if (parsedResult.type === 'location') {
+      // Location constraints: venue + team are critical
+      if (hasVenue) typeSpecificScore += 0.4; // Most critical
+      if (hasTeam) typeSpecificScore += 0.3;
+      if (hasNumber) typeSpecificScore += 0.1;
+    } else if (parsedResult.type === 'rest') {
+      // Rest constraints: number + time period are critical
+      if (hasNumber) typeSpecificScore += 0.3;
+      if (hasTimePeriod || hasTime) typeSpecificScore += 0.3;
+      if (hasTeam) typeSpecificScore += 0.2;
+    } else {
+      // General scoring for unknown types
+      typeSpecificScore =
+        (hasTeam ? 0.2 : 0) +
+        (hasTime ? 0.2 : 0) +
+        (hasVenue ? 0.2 : 0) +
+        (hasNumber ? 0.2 : 0);
     }
+
+    // Entity confidence bonus (higher confidence entities boost score)
+    const avgEntityConfidence =
+      entityCount > 0
+        ? parsedResult.entities.reduce(
+            (sum: number, e: any) => sum + (e.confidence || 0),
+            0,
+          ) / entityCount
+        : 0;
+    const confidenceBonus = avgEntityConfidence * 0.1;
+
+    // Final entity completeness calculation (matches backend exactly)
+    entityCompleteness = Math.min(
+      baseScore + typeSpecificScore + confidenceBonus,
+      1.0,
+    );
+    console.log(
+      '🔍 Frontend calculated entity completeness:',
+      entityCompleteness,
+    );
     const entityWeighted = entityCompleteness * 0.35;
 
-    // Condition Detection (25%)
-    const conditionStrength = conditionScore > 0 ? 0.85 : 0; // From logs showing 0.85
+    // Condition Detection (25%) - Improved calculation
+    let conditionStrength = 0;
+
+    // Base condition count scoring
+    if (conditionScore > 0) {
+      conditionStrength = 0.5;
+    }
+
+    // Enhanced condition detection with constraint-type awareness
+    const originalText = parsedResult.raw_text || '';
+    const textLower = originalText.toLowerCase();
+    const strongConditionWords = [
+      'cannot',
+      'must not',
+      'never',
+      'always',
+      'must',
+      'required',
+      'no more than',
+      'at least',
+      'maximum',
+      'minimum',
+      'before',
+      'after',
+    ];
+
+    const foundStrongConditions = strongConditionWords.filter((word) =>
+      textLower.includes(word),
+    );
+    conditionStrength += Math.min(foundStrongConditions.length * 0.15, 0.3);
+
+    // Constraint-type specific condition bonuses
+    if (parsedResult.type === 'capacity') {
+      if (
+        textLower.match(
+          /\b(no more than|at most|maximum|max|at least|minimum)\s+\d+\b/,
+        )
+      ) {
+        conditionStrength += 0.2; // Strong capacity condition
+      }
+    } else if (parsedResult.type === 'temporal') {
+      if (textLower.match(/\b(cannot|must not|never|before|after|during)\b/)) {
+        conditionStrength += 0.2; // Strong temporal condition
+      }
+    } else if (parsedResult.type === 'location') {
+      if (textLower.match(/\b(must|required|only|at|in|on)\b/)) {
+        conditionStrength += 0.15; // Location assignment condition
+      }
+    }
+
+    conditionStrength = Math.min(conditionStrength, 1.0);
+    console.log(
+      '🔍 Frontend calculated condition strength:',
+      conditionStrength,
+    );
     const conditionWeighted = conditionStrength * 0.25;
 
     return {
@@ -567,35 +682,35 @@ export function ConfidenceMethodology({
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <div className="text-center">
                   <div className="text-lg font-mono font-bold text-blue-600">
-                    {scoring.intent.percentage}%
+                    {(scoring.intent.raw * 100).toFixed(1)}%
                   </div>
                   <div className="text-xs text-gray-600 font-medium">
                     Intent Classification
                   </div>
                   <div className="text-xs text-gray-500 leading-relaxed">
-                    HuggingFace + Pattern Matching
+                    Raw Score (×40% = {scoring.intent.percentage}%)
                   </div>
                 </div>
                 <div className="text-center">
                   <div className="text-lg font-mono font-bold text-green-600">
-                    {scoring.entity.percentage}%
+                    {(scoring.entity.raw * 100).toFixed(1)}%
                   </div>
                   <div className="text-xs text-gray-600 font-medium">
                     Entity Completeness
                   </div>
                   <div className="text-xs text-gray-500 leading-relaxed">
-                    NER + Rule-based Extraction
+                    Raw Score (×35% = {scoring.entity.percentage}%)
                   </div>
                 </div>
                 <div className="text-center">
                   <div className="text-lg font-mono font-bold text-purple-600">
-                    {scoring.condition.percentage}%
+                    {(scoring.condition.raw * 100).toFixed(1)}%
                   </div>
                   <div className="text-xs text-gray-600 font-medium">
                     Condition Detection
                   </div>
                   <div className="text-xs text-gray-500 leading-relaxed">
-                    Logical Operator Analysis
+                    Raw Score (×25% = {scoring.condition.percentage}%)
                   </div>
                 </div>
               </div>
