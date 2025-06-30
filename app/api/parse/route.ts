@@ -21,14 +21,26 @@ export async function POST(request: NextRequest) {
       error: authError,
     } = await supabase.auth.getUser();
     if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Unauthorized',
+        },
+        { status: 401 },
+      );
     }
 
     const body = await request.json();
     const { text, constraintSetId, parseMultiple = true } = body;
 
     if (!text || typeof text !== 'string') {
-      return NextResponse.json({ error: 'Text is required' }, { status: 400 });
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Text is required',
+        },
+        { status: 400 },
+      );
     }
 
     // Check if this is a multi-constraint input
@@ -42,42 +54,101 @@ export async function POST(request: NextRequest) {
       console.log(`  ${index + 1}. "${constraint}"`);
     });
 
-    // Use HuggingFace parser for advanced NLP (with fallback to rule-based)
-    const hfParser = new HuggingFaceConstraintParser();
+    let parsedResults: Array<{
+      index: number;
+      rawText: string;
+      parsedData: any;
+      saved: boolean;
+      constraintId: string | undefined;
+    }>;
 
-    // Parse each constraint individually
-    const parsedResults = await Promise.all(
-      constraintTexts.map(async (constraintText, index) => {
-        console.log(`🔍 Parsing constraint ${index + 1}: "${constraintText}"`);
-        const parsedData = await hfParser.parseConstraint(
-          constraintText.trim(),
-        );
+    try {
+      // Use HuggingFace parser for advanced NLP (with fallback to rule-based)
+      const hfParser = new HuggingFaceConstraintParser();
+      console.log(`🔍 HF Parser configured: ${hfParser.isConfigured}`);
 
-        // Save to database if constraintSetId is provided
-        let savedConstraint = null;
-        if (constraintSetId) {
+      // Parse each constraint individually
+      parsedResults = await Promise.all(
+        constraintTexts.map(async (constraintText, index) => {
+          console.log(
+            `🔍 Parsing constraint ${index + 1}: "${constraintText}"`,
+          );
+
+          let parsedData: any;
           try {
-            savedConstraint = await createConstraint({
-              set_id: constraintSetId,
-              raw_text: constraintText.trim(),
-              parsed_data: parsedData,
-              confidence_score: parsedData.confidence,
-            });
-          } catch (dbError) {
-            console.error(`Failed to save constraint ${index + 1}:`, dbError);
-            // Continue without saving - return the parsed result anyway
+            parsedData = await hfParser.parseConstraint(constraintText.trim());
+          } catch (parseError) {
+            console.warn(
+              `Failed to parse constraint ${index + 1}, using fallback:`,
+              parseError,
+            );
+            // Use simple parser as absolute fallback
+            parsedData = simpleConstraintParser(constraintText.trim());
+            // Ensure fallback has consistent structure
+            if (!parsedData.llmJudge) {
+              parsedData.llmJudge = {
+                isValid: true,
+                confidence: parsedData.confidence,
+                reasoning: 'Simple rule-based parsing used as fallback',
+                completenessScore: parsedData.confidence,
+                contextualInsights:
+                  'Fallback parsing applied due to ML parser failure',
+              };
+            }
           }
-        }
+
+          // Save to database if constraintSetId is provided
+          let savedConstraint = null;
+          if (constraintSetId) {
+            try {
+              savedConstraint = await createConstraint({
+                set_id: constraintSetId,
+                raw_text: constraintText.trim(),
+                parsed_data: parsedData,
+                confidence_score: parsedData.confidence,
+              });
+            } catch (dbError) {
+              console.error(`Failed to save constraint ${index + 1}:`, dbError);
+              // Continue without saving - return the parsed result anyway
+            }
+          }
+
+          return {
+            index: index + 1,
+            rawText: constraintText.trim(),
+            parsedData,
+            saved: !!savedConstraint,
+            constraintId: savedConstraint?.id,
+          };
+        }),
+      );
+    } catch (parserError) {
+      console.error(
+        'Parser initialization failed, using simple fallback:',
+        parserError,
+      );
+      // If HF parser completely fails, use simple parser for all constraints
+      parsedResults = constraintTexts.map((constraintText, index) => {
+        const parsedData: any = simpleConstraintParser(constraintText.trim());
+        // Ensure consistent structure
+        parsedData.llmJudge = {
+          isValid: true,
+          confidence: parsedData.confidence,
+          reasoning: 'Simple rule-based parsing used due to ML parser failure',
+          completenessScore: parsedData.confidence,
+          contextualInsights:
+            'Fallback parsing applied due to parser initialization failure',
+        };
 
         return {
           index: index + 1,
           rawText: constraintText.trim(),
           parsedData,
-          saved: !!savedConstraint,
-          constraintId: savedConstraint?.id,
+          saved: false,
+          constraintId: undefined,
         };
-      }),
-    );
+      });
+    }
 
     // Calculate overall statistics
     const totalConfidence = parsedResults.reduce(
@@ -87,7 +158,7 @@ export async function POST(request: NextRequest) {
     const averageConfidence = totalConfidence / parsedResults.length;
     const savedCount = parsedResults.filter((result) => result.saved).length;
 
-    // Prepare simplified response structure
+    // Prepare simplified response structure - ALWAYS include success: true
     const response: any = {
       success: true,
       isMultiple: isMultipleConstraints,
@@ -110,9 +181,7 @@ export async function POST(request: NextRequest) {
           // Additional metadata
           temporal_info: result.parsedData.temporal,
           raw_text: result.rawText,
-          parsing_method: hfParser.isConfigured
-            ? 'huggingface_ml'
-            : 'rule_based',
+          parsing_method: 'rule_based', // Will be updated based on actual parser used
         };
 
         return {
@@ -124,7 +193,7 @@ export async function POST(request: NextRequest) {
         totalConstraints: parsedResults.length,
         averageConfidence,
         savedCount,
-        parsingMethod: hfParser.isConfigured ? 'huggingface' : 'rule-based',
+        parsingMethod: 'rule-based', // Will be determined by actual parser
         constraintTypes: parsedResults.map((r) =>
           mapToRequiredConstraintType(r.parsedData.type),
         ),
@@ -140,9 +209,7 @@ export async function POST(request: NextRequest) {
       response.data = singleResult.parsedData;
       response.saved = singleResult.saved;
       response.constraintId = singleResult.constraintId;
-      response.parsingMethod = hfParser.isConfigured
-        ? 'huggingface'
-        : 'rule-based';
+      response.parsingMethod = 'rule-based';
 
       // Include the exact required output structure
       response.standardOutput = response.results[0]?.standardOutput;
@@ -175,6 +242,7 @@ export async function POST(request: NextRequest) {
     console.error('Parse API error:', error);
     return NextResponse.json(
       {
+        success: false,
         error: 'Internal server error',
         details: error instanceof Error ? error.message : 'Unknown error',
       },
