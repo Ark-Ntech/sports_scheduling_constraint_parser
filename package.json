@@ -26,8 +26,8 @@
   "homepage": "https://github.com/your-username/sports-scheduling-constraint-parser#readme",
   "scripts": {
     "dev": "next dev --turbo",
-    "build": "SKIP_ENV_VALIDATION=true next build",
-    "build:vercel": "DISABLE_ESLINT_PLUGIN=true SKIP_ENV_VALIDATION=true next build",
+    "build": "next build",
+    "build:vercel": "next build",
     "start": "next start",
     "lint": "next lint && biome lint --write --unsafe",
     "lint:fix": "next lint --fix && biome lint --write --unsafe",
