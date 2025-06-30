@@ -1,9 +1,9 @@
-# 🚀 **[Live Demo](https://sportsschedulingconstraintparser.vercel.app/)** - Try it now!
+# 🚀 **[Live Demo](https://sports-scheduling-constraint-parser.vercel.app/)** - Try it now!
 
 # 📊 Sports Scheduling Constraint Parser
 
 <p align="center">
-    A sophisticated natural language processor for sports scheduling constraints with comprehensive management and calendar integration, built with Next.js 15 and advanced ML capabilities.
+    A sophisticated natural language processor for sports scheduling constraints with comprehensive management and calendar integration, built with Next.js 14.2.18 and advanced ML capabilities.
 </p>
 
 <p align="center">
@@ -77,7 +77,7 @@
 
 ### Core Technologies
 
-- **[Next.js 15](https://nextjs.org)** - React framework with App Router and Server Components
+- **[Next.js 14.2.18](https://nextjs.org)** - Stable React framework with App Router (downgraded from 15 for Vercel compatibility)
 - **[TypeScript](https://typescriptlang.org)** - Type-safe development
 - **[Supabase](https://supabase.com)** - PostgreSQL database with authentication
 - **[Tailwind CSS](https://tailwindcss.com)** - Utility-first CSS framework
@@ -165,8 +165,6 @@ pnpm install
    pnpm dev
    ```
 
-````
-
 Your application will be running on [http://localhost:3000](http://localhost:3000).
 
 ---
@@ -221,13 +219,15 @@ Your application will be running on [http://localhost:3000](http://localhost:300
 
    # Build to verify everything works
    pnpm build
+   ```
+
 ````
 
 2. **Deploy to Vercel**
 
    ```bash
    npx vercel --prod
-   ```
+````
 
 3. **Configure Environment Variables in Vercel Dashboard**
 
