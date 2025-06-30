@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
+import { HuggingFaceConstraintParser } from '@/lib/nlp/huggingface-parser';
 
 // Simple test route to verify parsing functionality without authentication
 export async function POST(request: NextRequest) {
@@ -10,24 +11,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Text is required' }, { status: 400 });
     }
 
-    // Parse the constraint using the same logic
-    const parsedData = simpleConstraintParser(text);
+    console.log(`🔍 Testing constraint parsing: "${text}"`);
 
-    return NextResponse.json({
+    // Use HuggingFace parser for testing
+    const hfParser = new HuggingFaceConstraintParser();
+    const parsedData = await hfParser.parseConstraint(text.trim());
+
+    const response = {
       success: true,
-      data: parsedData,
-      message: 'Parsing successful (test mode)',
-    });
+      text: text,
+      parsedData: parsedData,
+      parsingMethod: hfParser.isConfigured ? 'huggingface' : 'rule-based',
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'unknown',
+    };
+
+    console.log(
+      `✅ Test parsing successful with confidence: ${parsedData.confidence}`,
+    );
+    return NextResponse.json(response);
   } catch (error) {
     console.error('Parse test API error:', error);
     return NextResponse.json(
       {
         error: 'Internal server error',
         details: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString(),
       },
       { status: 500 },
     );
   }
+}
+
+export async function GET() {
+  return NextResponse.json({
+    message: 'Parse test endpoint is working!',
+    usage: 'POST with {"text": "your constraint here"}',
+    timestamp: new Date().toISOString(),
+  });
 }
 
 function simpleConstraintParser(text: string) {
