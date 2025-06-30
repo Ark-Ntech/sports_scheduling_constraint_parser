@@ -27,6 +27,7 @@
   "scripts": {
     "dev": "next dev --turbo",
     "build": "next build",
+    "build:vercel": "DISABLE_ESLINT_PLUGIN=true next build",
     "start": "next start",
     "lint": "next lint && biome lint --write --unsafe",
     "lint:fix": "next lint --fix && biome lint --write --unsafe",
