@@ -1,3 +1,5 @@
+# 🚀 **[Live Demo](https://sportsschedulingconstraintparser.vercel.app/)** - Try it now!
+
 # 📊 Sports Scheduling Constraint Parser
 
 <p align="center">
